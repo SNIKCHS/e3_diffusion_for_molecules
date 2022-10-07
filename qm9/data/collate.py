@@ -87,14 +87,14 @@ class PreprocessQM9:
 
         #Obtain edges
         batch_size, n_nodes = atom_mask.size()
-        edge_mask = atom_mask.unsqueeze(1) * atom_mask.unsqueeze(2)
+        edge_mask = atom_mask.unsqueeze(1) * atom_mask.unsqueeze(2)  # (b,1,n_atom)*(b,n_atom,1)=(b,n_atom,n_atom)
 
         #mask diagonal
-        diag_mask = ~torch.eye(edge_mask.size(1), dtype=torch.bool).unsqueeze(0)
+        diag_mask = ~torch.eye(edge_mask.size(1), dtype=torch.bool).unsqueeze(0)  # 对角线，即(i,i)的边置0
         edge_mask *= diag_mask
 
         #edge_mask = atom_mask.unsqueeze(1) * atom_mask.unsqueeze(2)
-        batch['edge_mask'] = edge_mask.view(batch_size * n_nodes * n_nodes, 1)
+        batch['edge_mask'] = edge_mask.view(batch_size * n_nodes * n_nodes, 1) # (i*j,1) i<j 判断i或j是否是padding 以及去掉i*i的边
 
         if self.load_charges:
             batch['charges'] = batch['charges'].unsqueeze(2)

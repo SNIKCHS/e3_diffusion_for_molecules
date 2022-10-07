@@ -47,14 +47,17 @@ class EGNN_dynamics_QM9(nn.Module):
         return self._forward
 
     def _forward(self, t, xh, node_mask, edge_mask, context):
+        # xh是添加了噪声的z_t
         bs, n_nodes, dims = xh.shape
         h_dims = dims - self.n_dims
-        edges = self.get_adj_matrix(n_nodes, bs, self.device)
+        edges = self.get_adj_matrix(n_nodes, bs, self.device)  # [rows, cols] rows=cols=(batch_size*n_nodes*n_nodes) value in [0,batch_size*n_nodes)
+
         edges = [x.to(self.device) for x in edges]
         node_mask = node_mask.view(bs*n_nodes, 1)
         edge_mask = edge_mask.view(bs*n_nodes*n_nodes, 1)
-        xh = xh.view(bs*n_nodes, -1).clone() * node_mask
+        xh = xh.view(bs*n_nodes, -1).clone() * node_mask  # xh->(b*n_nodes,3+6)
         x = xh[:, 0:self.n_dims].clone()
+
         if h_dims == 0:
             h = torch.ones(bs*n_nodes, 1).to(self.device)
         else:
@@ -76,6 +79,7 @@ class EGNN_dynamics_QM9(nn.Module):
             h = torch.cat([h, context], dim=1)
 
         if self.mode == 'egnn_dynamics':
+
             h_final, x_final = self.egnn(h, x, edges, node_mask=node_mask, edge_mask=edge_mask)
             vel = (x_final - x) * node_mask  # This masking operation is redundant but just in case
         elif self.mode == 'gnn_dynamics':
@@ -113,6 +117,7 @@ class EGNN_dynamics_QM9(nn.Module):
             return torch.cat([vel, h_final], dim=2)
 
     def get_adj_matrix(self, n_nodes, batch_size, device):
+        # 对每个n_nodes，batch_size只要算一次
         if n_nodes in self._edges_dict:
             edges_dic_b = self._edges_dict[n_nodes]
             if batch_size in edges_dic_b:

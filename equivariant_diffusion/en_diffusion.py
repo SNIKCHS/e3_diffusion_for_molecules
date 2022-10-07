@@ -564,6 +564,21 @@ class EnVariationalDiffusion(torch.nn.Module):
         return log_p_xh_given_z
 
     def compute_loss(self, x, h, node_mask, edge_mask, context, t0_always):
+        """
+        主要计算部分
+        Parameters
+        ----------
+        x
+        h
+        node_mask
+        edge_mask
+        context
+        t0_always
+
+        Returns
+        -------
+
+        """
         """Computes an estimator for the variational lower bound, or the simple loss (MSE)."""
 
         # This part is about whether to include loss term 0 always.
@@ -578,7 +593,7 @@ class EnVariationalDiffusion(torch.nn.Module):
         # Sample a timestep t.
         t_int = torch.randint(
             lowest_t, self.T + 1, size=(x.size(0), 1), device=x.device).float()
-        s_int = t_int - 1
+        s_int = t_int - 1  # t的前一个时间步
         t_is_zero = (t_int == 0).float()  # Important to compute log p(x | z0).
 
         # Normalize t to [0, 1]. Note that the negative
@@ -591,21 +606,22 @@ class EnVariationalDiffusion(torch.nn.Module):
         gamma_t = self.inflate_batch_array(self.gamma(t), x)
 
         # Compute alpha_t and sigma_t from gamma.
-        alpha_t = self.alpha(gamma_t, x)
-        sigma_t = self.sigma(gamma_t, x)
+        alpha_t = self.alpha(gamma_t, x)  # 均值系数
+        sigma_t = self.sigma(gamma_t, x)  # 方差系数
 
         # Sample zt ~ Normal(alpha_t x, sigma_t)
         eps = self.sample_combined_position_feature_noise(
             n_samples=x.size(0), n_nodes=x.size(1), node_mask=node_mask)
 
         # Concatenate x, h[integer] and h[categorical].
-        xh = torch.cat([x, h['categorical'], h['integer']], dim=2)
+        xh = torch.cat([x, h['categorical'], h['integer']], dim=2)  #(b,n_nodes,3+5(onehot)+1)
+
         # Sample z_t given x, h for timestep t, from q(z_t | x, h)
         z_t = alpha_t * xh + sigma_t * eps
-
+        """去噪过程"""
         diffusion_utils.assert_mean_zero_with_mask(z_t[:, :, :self.n_dims], node_mask)
 
-        # Neural net prediction.
+        # Neural net prediction. 拟合噪声
         net_out = self.phi(z_t, t, node_mask, edge_mask, context)
 
         # Compute the error.

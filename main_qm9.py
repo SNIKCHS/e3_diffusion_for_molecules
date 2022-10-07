@@ -1,6 +1,6 @@
 # Rdkit import should be first, do not move it
 try:
-    from rdkit import Chem
+    from rdkit import Chem  #检测生成的分子性质有用
 except ModuleNotFoundError:
     pass
 import copy
@@ -60,7 +60,7 @@ parser.add_argument('--n_layers', type=int, default=6,
 parser.add_argument('--inv_sublayers', type=int, default=1,
                     help='number of layers')
 parser.add_argument('--nf', type=int, default=128,
-                    help='number of layers')
+                    help='dim of EGNN hidden feature')
 parser.add_argument('--tanh', type=eval, default=True,
                     help='use tanh in the coord_mlp')
 parser.add_argument('--attention', type=eval, default=True,
@@ -81,7 +81,7 @@ parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
 parser.add_argument('--wandb_usr', type=str)
-parser.add_argument('--no_wandb', action='store_true', help='Disable wandb')
+parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -173,6 +173,11 @@ wandb.save('*.txt')
 dataloaders, charge_scale = dataset.retrieve_dataloaders(args)
 
 data_dummy = next(iter(dataloaders['train']))
+# print(data_dummy['one_hot']) [128, 25, 5] 只有5种原子 H,C,O,N,F padding是全false
+# print(data_dummy['edge_mask']) (b*n_atom*n_atom,1) atom_mask.unsqueeze(1) * atom_mask.unsqueeze(2) i*i=0  defined in qm9/data/collate.py
+#dict_keys(['num_atoms', 'charges', 'positions', 'index', 'A', 'B', 'C', 'mu', 'alpha', 'homo', 'lumo',
+# 'gap', 'r2', 'zpve', 'U0', 'U', 'H', 'G', 'Cv', 'omega1', 'zpve_thermo', 'U0_thermo', 'U_thermo', 'H_thermo',
+# 'G_thermo', 'Cv_thermo', 'one_hot', 'atom_mask', 'edge_mask'])
 
 
 if len(args.conditioning) > 0:
@@ -188,10 +193,11 @@ args.context_node_nf = context_node_nf
 
 
 # Create EGNN flow
-model, nodes_dist, prop_dist = get_model(args, device, dataset_info, dataloaders['train'])
+model, nodes_dist, prop_dist = get_model(args, device, dataset_info, dataloaders['train'])  # model=EnVariationalDiffusion 包含EGNN_dynamics_QM9
 if prop_dist is not None:
     prop_dist.set_normalizer(property_norms)
 model = model.to(device)
+
 optim = get_optim(args, model)
 # print(model)
 

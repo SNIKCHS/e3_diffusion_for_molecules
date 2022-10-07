@@ -30,36 +30,39 @@ class GCL(nn.Module):
     def edge_model(self, source, target, edge_attr, edge_mask):
         if edge_attr is None:  # Unused.
             out = torch.cat([source, target], dim=1)
-        else:
-            out = torch.cat([source, target, edge_attr], dim=1)
-        mij = self.edge_mlp(out)
+        else:  # edge_attr.shape=(b*n_nodes*n_nodes,2) concat2个distances
+            out = torch.cat([source, target, edge_attr], dim=1)  # (b*n_nodes*n_nodes,2*hidden_nf(default:128)+2)
+        mij = self.edge_mlp(out)  # (b*n_nodes*n_nodes,hidden_nf(default:128))
 
         if self.attention:
-            att_val = self.att_mlp(mij)
-            out = mij * att_val
+            att_val = self.att_mlp(mij)  # (b*n_nodes*n_nodes,1)
+            out = mij * att_val  # (b*n_nodes*n_nodes,hidden_nf(default:128))
         else:
             out = mij
 
         if edge_mask is not None:
             out = out * edge_mask
-        return out, mij
+
+        return out, mij  # (b*n_nodes*n_nodes,hidden_nf(default:128)) (b*n_nodes*n_nodes,hidden_nf(default:128))
 
     def node_model(self, x, edge_index, edge_attr, node_attr):
         row, col = edge_index
-        agg = unsorted_segment_sum(edge_attr, row, num_segments=x.size(0),
+        agg = unsorted_segment_sum(edge_attr, row, num_segments=x.size(0),  # num_segments=b*n_nodes
                                    normalization_factor=self.normalization_factor,
-                                   aggregation_method=self.aggregation_method)
-        if node_attr is not None:
+                                   aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,hidden_nf)->(b*n_nodes,hidden_nf)
+
+        if node_attr is not None:  # None
             agg = torch.cat([x, agg, node_attr], dim=1)
         else:
-            agg = torch.cat([x, agg], dim=1)
-        out = x + self.node_mlp(agg)
+            agg = torch.cat([x, agg], dim=1)  # (b*n_nodes,2*hidden_nf)
+        out = x + self.node_mlp(agg)  # residual connect
         return out, agg
 
     def forward(self, h, edge_index, edge_attr=None, node_attr=None, node_mask=None, edge_mask=None):
         row, col = edge_index
-        edge_feat, mij = self.edge_model(h[row], h[col], edge_attr, edge_mask)
-        h, agg = self.node_model(h, edge_index, edge_feat, node_attr)
+
+        edge_feat, mij = self.edge_model(h[row], h[col], edge_attr, edge_mask)  # pairwise的信息 (b*n_nodes*n_nodes,hidden_nf(default:128)) shape都一样，mij不使用
+        h, agg = self.node_model(h, edge_index, edge_feat, node_attr)  # h.shape=(b*n_nodes,hidden_nf)
         if node_mask is not None:
             h = h * node_mask
         return h, mij
@@ -132,11 +135,14 @@ class EquivariantBlock(nn.Module):
         self.to(self.device)
 
     def forward(self, h, x, edge_index, node_mask=None, edge_mask=None, edge_attr=None):
+        # edge_index:list[rol,col] (b*n_nodes*n_nodes,)
         # Edit Emiel: Remove velocity as input
         distances, coord_diff = coord2diff(x, edge_index, self.norm_constant)
+
         if self.sin_embedding is not None:
             distances = self.sin_embedding(distances)
-        edge_attr = torch.cat([distances, edge_attr], dim=1)
+        edge_attr = torch.cat([distances, edge_attr], dim=1)  # (b*n_nodes*n_nodes,2)edge_attr=distances 把两个相同的distances concat了
+
         for i in range(0, self.n_layers):
             h, _ = self._modules["gcl_%d" % i](h, edge_index, edge_attr=edge_attr, node_mask=node_mask, edge_mask=edge_mask)
         x = self._modules["gcl_equiv"](h, x, edge_index, coord_diff, edge_attr, node_mask, edge_mask)
@@ -183,10 +189,12 @@ class EGNN(nn.Module):
 
     def forward(self, h, x, edge_index, node_mask=None, edge_mask=None):
         # Edit Emiel: Remove velocity as input
-        distances, _ = coord2diff(x, edge_index)
+        distances, _ = coord2diff(x, edge_index)  # (b*n_node*n_node,1)
         if self.sin_embedding is not None:
             distances = self.sin_embedding(distances)
-        h = self.embedding(h)
+
+        h = self.embedding(h)  # default: (b*n_nodes,hidden_nf=128)
+
         for i in range(0, self.n_layers):
             h, x = self._modules["e_block_%d" % i](h, x, edge_index, node_mask=node_mask, edge_mask=edge_mask, edge_attr=distances)
 
