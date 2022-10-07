@@ -6,7 +6,7 @@ import torch
 # Folders
 def create_folders(args):
     try:
-        os.makedirs('outputs')
+        os.makedirs('../outputs')
     except OSError:
         pass
 

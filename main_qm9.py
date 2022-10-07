@@ -4,7 +4,7 @@ try:
 except ModuleNotFoundError:
     pass
 import copy
-import utils
+import utils.utils as utils
 import argparse
 import wandb
 from configs.datasets_config import get_dataset_info
@@ -173,8 +173,10 @@ wandb.save('*.txt')
 dataloaders, charge_scale = dataset.retrieve_dataloaders(args)
 
 data_dummy = next(iter(dataloaders['train']))
-# print(data_dummy['one_hot']) [128, 25, 5] 只有5种原子 H,C,O,N,F padding是全false
+# print(data_dummy['one_hot'].shape) # [128, 25, 5] 只有5种原子 H,C,O,N,F padding是全false
 # print(data_dummy['edge_mask']) (b*n_atom*n_atom,1) atom_mask.unsqueeze(1) * atom_mask.unsqueeze(2) i*i=0  defined in qm9/data/collate.py
+# print(data_dummy['atom_mask'].shape) (b,n_atom)
+
 #dict_keys(['num_atoms', 'charges', 'positions', 'index', 'A', 'B', 'C', 'mu', 'alpha', 'homo', 'lumo',
 # 'gap', 'r2', 'zpve', 'U0', 'U', 'H', 'G', 'Cv', 'omega1', 'zpve_thermo', 'U0_thermo', 'U_thermo', 'H_thermo',
 # 'G_thermo', 'Cv_thermo', 'one_hot', 'atom_mask', 'edge_mask'])

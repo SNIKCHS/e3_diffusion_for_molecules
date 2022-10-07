@@ -56,7 +56,7 @@ class EGNN_dynamics_QM9(nn.Module):
         node_mask = node_mask.view(bs*n_nodes, 1)
         edge_mask = edge_mask.view(bs*n_nodes*n_nodes, 1)
         xh = xh.view(bs*n_nodes, -1).clone() * node_mask  # xh->(b*n_nodes,3+6)
-        x = xh[:, 0:self.n_dims].clone()
+        x = xh[:, 0:self.n_dims].clone()  # x->(b*n_nodes,3)
 
         if h_dims == 0:
             h = torch.ones(bs*n_nodes, 1).to(self.device)

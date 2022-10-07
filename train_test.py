@@ -11,7 +11,60 @@ from qm9 import losses
 import time
 import torch
 
+def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
+                nodes_dist, gradnorm_queue, dataset_info, prop_dist):
+    model_dp.train()
+    model.train()
+    nll_epoch = []
+    n_iterations = len(loader)
+    for i, data in enumerate(loader):
+        x = data['positions'].to(device, dtype)
+        node_mask = data['atom_mask'].to(device, dtype).unsqueeze(2)  # (b,n_atom,1)
+        edge_mask = data['edge_mask'].to(device, dtype)
+        one_hot = data['one_hot'].to(device, dtype)
+        categories = np.argmax(one_hot.int(), axis=2)  # (b,n_nodes)
+        charges = (data['charges'] if args.include_charges else torch.zeros(0)).to(device, dtype)
 
+        x = remove_mean_with_mask(x, node_mask)
+
+        h = {'categories': categories, 'charges': charges}
+
+        if len(args.conditioning) > 0:
+            context = qm9utils.prepare_context(args.conditioning, data, property_norms).to(device, dtype)
+            assert_correctly_masked(context, node_mask)
+        else:
+            context = None
+
+        optim.zero_grad()
+
+        # transform batch through flow
+        nll, reg_term = model(x,h,node_mask,edge_mask)
+
+        # standard nll from forward KL
+        loss = nll + args.ode_regularization * reg_term
+        loss.backward()
+
+        if args.clip_grad:
+            grad_norm = utils.gradient_clipping(model, gradnorm_queue)
+        else:
+            grad_norm = 0.
+
+        optim.step()
+
+        # Update EMA if enabled.
+        if args.ema_decay > 0:
+            ema.update_model_average(model_ema, model)
+
+        if i % args.n_report_steps == 0:
+            print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
+                  f"Loss {loss.item():.2f}, NLL: {nll.item():.2f}, "
+                  f"RegTerm: {reg_term.item():.1f}, "
+                  f"GradNorm: {grad_norm:.1f}")
+        nll_epoch.append(nll.item())
+        wandb.log({"Batch NLL": nll.item()}, commit=True)
+        if args.break_train_epoch:
+            break
+    wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
 def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
                 nodes_dist, gradnorm_queue, dataset_info, prop_dist):
     model_dp.train()
