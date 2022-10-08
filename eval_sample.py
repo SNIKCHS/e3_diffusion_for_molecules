@@ -4,7 +4,7 @@ try:
 except ModuleNotFoundError:
     pass
 
-import utils
+import utils.utils as utils
 import argparse
 from configs.datasets_config import qm9_with_h, qm9_without_h
 from qm9 import dataset

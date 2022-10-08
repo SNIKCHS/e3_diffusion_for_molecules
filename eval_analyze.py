@@ -3,7 +3,7 @@ try:
     from rdkit import Chem
 except ModuleNotFoundError:
     pass
-import utils
+import utils.utils as utils
 import argparse
 from qm9 import dataset
 from qm9.models import get_model

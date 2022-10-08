@@ -1,18 +1,22 @@
+from torch import nn
+
 import wandb
-from equivariant_diffusion.utils import assert_mean_zero_with_mask, remove_mean_with_mask,\
+from equivariant_diffusion.utils import assert_mean_zero_with_mask, remove_mean_with_mask, \
     assert_correctly_masked, sample_center_gravity_zero_gaussian_with_mask
 import numpy as np
 import qm9.visualizer as vis
 from qm9.analyze import analyze_stability_for_molecules
 from qm9.sampling import sample_chain, sample, sample_sweep_conditional
-import utils
+import utils.utils as utils
 import qm9.utils as qm9utils
 from qm9 import losses
 import time
 import torch
 
+
 def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
-                nodes_dist, gradnorm_queue, dataset_info, prop_dist):
+                   gradnorm_queue):
+    # torch.autograd.set_detect_anomaly(True)
     model_dp.train()
     model.train()
     nll_epoch = []
@@ -22,12 +26,15 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         node_mask = data['atom_mask'].to(device, dtype).unsqueeze(2)  # (b,n_atom,1)
         edge_mask = data['edge_mask'].to(device, dtype)
         one_hot = data['one_hot'].to(device, dtype)
-        categories = np.argmax(one_hot.int(), axis=2)  # (b,n_nodes)
+
+        categories = (torch.argmax(one_hot.int(), dim=2) + 1) * node_mask.squeeze()  # (b,n_nodes) o为padding，1~5
+
+        # categories = categories.to(device)
         charges = (data['charges'] if args.include_charges else torch.zeros(0)).to(device, dtype)
 
         x = remove_mean_with_mask(x, node_mask)
 
-        h = {'categories': categories, 'charges': charges}
+        h = (categories.long(), charges)
 
         if len(args.conditioning) > 0:
             context = qm9utils.prepare_context(args.conditioning, data, property_norms).to(device, dtype)
@@ -38,10 +45,12 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         optim.zero_grad()
 
         # transform batch through flow
-        nll, reg_term = model(x,h,node_mask,edge_mask)
+        nll, reg_term = model(x, h, node_mask, edge_mask)
 
         # standard nll from forward KL
-        loss = nll + args.ode_regularization * reg_term
+        # loss = nll + args.ode_regularization * reg_term
+        loss = nll
+        # with torch.autograd.detect_anomaly():
         loss.backward()
 
         if args.clip_grad:
@@ -49,15 +58,36 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         else:
             grad_norm = 0.
 
+        # for name,p in model.named_parameters():
+        #     print(name,p.grad)
         optim.step()
+        # for name,p in model.named_parameters():
+        #     print(name,torch.any(torch.isnan(p)))
+        if args.model != 'MLP' and args.c is None:
+            en_curvatures = model.get_submodule('encoder.curvatures')
+            for p in en_curvatures.parameters():
+                p.data.clamp_(1e-8)
+            de_curvatures = model.get_submodule('decoder.curvatures')
+            for p in de_curvatures.parameters():
+                p.data.clamp_(1e-8)
+
+            # curvatures = list(model.get_submodule('encoder.curvatures'))
+            # print('encoder:',curvatures)
+            # curvatures = list(model.get_submodule('decoder.curvatures'))
+            # print('decoder:',curvatures)
 
         # Update EMA if enabled.
         if args.ema_decay > 0:
             ema.update_model_average(model_ema, model)
 
+        if torch.isnan(loss):
+            # for name,p in model.named_parameters():
+            #     print(name,p.grad)
+            exit(0)
+
         if i % args.n_report_steps == 0:
             print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
-                  f"Loss {loss.item():.2f}, NLL: {nll.item():.2f}, "
+                  f"Loss {loss.item():.4f}, NLL: {nll.item():.4f}, "
                   f"RegTerm: {reg_term.item():.1f}, "
                   f"GradNorm: {grad_norm:.1f}")
         nll_epoch.append(nll.item())
@@ -65,6 +95,8 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         if args.break_train_epoch:
             break
     wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
+
+
 def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
                 nodes_dist, gradnorm_queue, dataset_info, prop_dist):
     model_dp.train()
@@ -108,7 +140,7 @@ def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dt
         # standard nll from forward KL
         loss = nll + args.ode_regularization * reg_term
         loss.backward()
-
+        nn.utils.clip_grad_value_(model.parameters(), 0.1)
         if args.clip_grad:
             grad_norm = utils.gradient_clipping(model, gradnorm_queue)
         else:
@@ -122,7 +154,7 @@ def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dt
 
         if i % args.n_report_steps == 0:
             print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
-                  f"Loss {loss.item():.2f}, NLL: {nll.item():.2f}, "
+                  f"Loss {loss.item():.4f}, NLL: {nll.item():.4f}, "
                   f"RegTerm: {reg_term.item():.1f}, "
                   f"GradNorm: {grad_norm:.1f}")
         nll_epoch.append(nll.item())
@@ -151,6 +183,46 @@ def check_mask_correct(variables, node_mask):
     for i, variable in enumerate(variables):
         if len(variable) > 0:
             assert_correctly_masked(variable, node_mask)
+
+
+def test_AE(args, loader, epoch, eval_model, device, dtype, property_norms, partition='Test'):
+    eval_model.eval()
+    with torch.no_grad():
+        nll_epoch = 0
+        n_samples = 0
+
+        n_iterations = len(loader)
+
+        for i, data in enumerate(loader):
+            x = data['positions'].to(device, dtype)
+            batch_size = x.size(0)
+            node_mask = data['atom_mask'].to(device, dtype).unsqueeze(2)
+            edge_mask = data['edge_mask'].to(device, dtype)
+            one_hot = data['one_hot'].to(device, dtype)
+            categories = (torch.argmax(one_hot.int(), dim=2) + 1) * node_mask.squeeze()  # (b,n_nodes) o为padding，1~5
+            categories = categories.to(device)
+            charges = (data['charges'] if args.include_charges else torch.zeros(0)).to(device, dtype)
+
+            x = remove_mean_with_mask(x, node_mask)
+
+            h = (categories.long(), charges)
+            if len(args.conditioning) > 0:
+                context = qm9utils.prepare_context(args.conditioning, data, property_norms).to(device, dtype)
+                assert_correctly_masked(context, node_mask)
+            else:
+                context = None
+
+            # transform batch through flow
+            nll, _ = eval_model(x, h, node_mask, edge_mask)
+            # standard nll from forward KL
+
+            nll_epoch += nll.item() * batch_size
+            n_samples += batch_size
+            if i % args.n_report_steps == 0:
+                print(f"\r {partition} NLL \t epoch: {epoch}, iter: {i}/{n_iterations}, "
+                      f"NLL: {nll.item():.2f}")
+
+    return nll_epoch / n_samples
 
 
 def test(args, loader, epoch, eval_model, device, dtype, property_norms, nodes_dist, partition='Test'):
@@ -197,9 +269,9 @@ def test(args, loader, epoch, eval_model, device, dtype, property_norms, nodes_d
             n_samples += batch_size
             if i % args.n_report_steps == 0:
                 print(f"\r {partition} NLL \t epoch: {epoch}, iter: {i}/{n_iterations}, "
-                      f"NLL: {nll_epoch/n_samples:.2f}")
+                      f"NLL: {nll_epoch / n_samples:.4f}")
 
-    return nll_epoch/n_samples
+    return nll_epoch / n_samples
 
 
 def save_and_sample_chain(model, args, device, dataset_info, prop_dist,
@@ -216,7 +288,7 @@ def save_and_sample_chain(model, args, device, dataset_info, prop_dist,
 def sample_different_sizes_and_save(model, nodes_dist, args, device, dataset_info, prop_dist,
                                     n_samples=5, epoch=0, batch_size=100, batch_id=''):
     batch_size = min(batch_size, n_samples)
-    for counter in range(int(n_samples/batch_size)):
+    for counter in range(int(n_samples / batch_size)):
         nodesxsample = nodes_dist.sample(batch_size)
         one_hot, charges, x, node_mask = sample(args, device, model, prop_dist=prop_dist,
                                                 nodesxsample=nodesxsample,
@@ -232,7 +304,7 @@ def analyze_and_save(epoch, model_sample, nodes_dist, args, device, dataset_info
     batch_size = min(batch_size, n_samples)
     assert n_samples % batch_size == 0
     molecules = {'one_hot': [], 'x': [], 'node_mask': []}
-    for i in range(int(n_samples/batch_size)):
+    for i in range(int(n_samples / batch_size)):
         nodesxsample = nodes_dist.sample(batch_size)
         one_hot, charges, x, node_mask = sample(args, device, model_sample, dataset_info, prop_dist,
                                                 nodesxsample=nodesxsample)

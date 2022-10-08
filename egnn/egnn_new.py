@@ -60,7 +60,6 @@ class GCL(nn.Module):
 
     def forward(self, h, edge_index, edge_attr=None, node_attr=None, node_mask=None, edge_mask=None):
         row, col = edge_index
-
         edge_feat, mij = self.edge_model(h[row], h[col], edge_attr, edge_mask)  # pairwise的信息 (b*n_nodes*n_nodes,hidden_nf(default:128)) shape都一样，mij不使用
         h, agg = self.node_model(h, edge_index, edge_feat, node_attr)  # h.shape=(b*n_nodes,hidden_nf)
         if node_mask is not None:

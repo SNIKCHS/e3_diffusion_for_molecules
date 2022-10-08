@@ -1,7 +1,7 @@
-import numpy as np
+
 import torch
-import Decoders
-import Encoders
+import AutoEncoder.Decoders as Decoders
+import AutoEncoder.Encoders as Encoders
 from torch import nn
 import manifolds
 
@@ -21,37 +21,37 @@ class HyperbolicAE(nn.Module):
     def forward(self, x, h, node_mask, edge_mask):
 
         categories, charges = h  # (b,n_atom)
-
         batch_size, n_nodes = categories.shape
         edges = self.get_adj_matrix(n_nodes,batch_size)  # [rows, cols] rows=cols=(batch_size*n_nodes*n_nodes) value in [0,batch_size*n_nodes)
-
-        h = self.encoder(x, categories, charges, edges, node_mask, edge_mask)
-
+        h, distances, edges, node_mask, edge_mask = self.encoder(x, categories, charges, edges, node_mask, edge_mask)
+        # print('enc:', torch.any(torch.isnan(h)))
         mu = torch.mean(h, dim=-1)
         logvar = torch.log(torch.std(h, dim=-1))
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp().pow(2)) / batch_size
-        KLD = 0.01 * torch.clamp(KLD, min=0, max=1e2)
-        output = self.decoder.decode(h, edges, node_mask, edge_mask)
-        target = categories
-        return self.compute_loss(target, output), KLD
+        KLD = torch.clamp(KLD, min=0, max=1e2)
+        output = self.decoder.decode(h, distances, edges, node_mask, edge_mask)
+        # print('dec', torch.any(torch.isnan(output)))
+        # print('dec:', torch.any(torch.isnan(output)))
+        return self.compute_loss(categories, output), KLD
 
     def compute_loss(self, x, x_hat):
         """
         auto-encoder的损失
-        :param x: encoder的输入 [原子序数,原子坐标]
-        :param x_hat: decoder的输出 (b,n_atom,4)
+        :param x: encoder的输入 原子类别（0~5）
+        :param x_hat: decoder的输出 (b*n_nodes,6)
         :return: loss
         """
-        atomic_numbers, positions = x
-        positions_pred, atomic_numbers_pred = x_hat[..., :3], x_hat[..., 3:]
+        b = x.size(0)
         # positions_pred = self.manifold.logmap0(positions_pred,self.decoder.curvatures[-1])
-        n_type = atomic_numbers_pred.size(-1)
-
+        n_type = x_hat.size(-1)
         atom_loss_f = nn.CrossEntropyLoss(reduction='sum')
-        pos_loss_f = nn.MSELoss(reduction='sum')
-        # loss = (atom_loss_f(atomic_numbers_pred.view(-1,n_type),atomic_numbers.view(-1))+pos_loss_f(positions_pred,positions)) / positions.size(0)
-        loss = (atom_loss_f(atomic_numbers_pred.view(-1, n_type), atomic_numbers.view(-1))) / positions.size(0)
-        return loss
+        # print('x_hat', torch.any(torch.isnan(x_hat)))
+        loss = atom_loss_f(x_hat.view(-1, n_type), x.view(-1))/b
+        # print('loss',torch.any(torch.isnan(loss)))
+        # print(x_hat.softmax(dim=-1).view(-1, n_type)[:2])
+        # print(x.view(-1)[:2])
+        # exit(0)
+        return loss.sum()
 
     def get_adj_matrix(self, n_nodes, batch_size):
         # 对每个n_nodes，batch_size只要算一次

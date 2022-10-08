@@ -1,36 +1,38 @@
 import manifolds
 import torch.nn as nn
+import layers.hyp_layers as hyp_layers
 import torch.nn.functional as F
 import torch
 from layers.layers import GraphConvolution, Linear, get_dim_act
+
 
 class Decoder(nn.Module):
     """
     Decoder abstract class
     """
 
-    def __init__(self, c,args):
+    def __init__(self, c, args):
         super(Decoder, self).__init__()
         self.c = c
+        self.out = nn.Sequential(
+            nn.Linear(args.dim,args.max_z)
+        )
 
-        self.out = Linear(args.dim,args.max_z+3,None,None,True)
-
-    def decode(self, x, adj):
+    def decode(self, h, distances, edges, node_mask, edge_mask):
 
         if self.decode_adj:
-            input = (x, adj)
-            output, _ = self.decoder.forward(input)
+            input = (h, distances, edges, node_mask, edge_mask)
+            output, distances, edges, node_mask, edge_mask = self.decoder.forward(input)
         else:
-            output = self.decoder.forward(x)
+            output = self.decoder.forward(h)
 
         # if self.c is not None:
         #     output = self.manifold.logmap0(output, self.curvatures[-1])
         #     output = self.manifold.proj_tan0(output,  self.curvatures[-1])
+
         output = self.out(output)
+
         return output
-
-
-
 
 
 class GCNDecoder(Decoder):
@@ -39,7 +41,7 @@ class GCNDecoder(Decoder):
     """
 
     def __init__(self, c, args):
-        super(GCNDecoder, self).__init__(c,args)
+        super(GCNDecoder, self).__init__(c, args)
 
         assert args.num_layers > 0
         dims, acts = get_dim_act(args)
@@ -61,9 +63,8 @@ class LinearDecoder(Decoder):
     MLP Decoder for Hyperbolic/Euclidean
     """
 
-    # NOTE : self.c is fixed, not trainable
     def __init__(self, c, args):
-        super(LinearDecoder, self).__init__(c,args)
+        super(LinearDecoder, self).__init__(c, args)
         self.manifold = getattr(manifolds, args.manifold)()
         dims, acts = get_dim_act(args)
         layers = []
@@ -74,14 +75,11 @@ class LinearDecoder(Decoder):
         self.decoder = nn.Sequential(*layers)
         self.decode_adj = False
 
-
     def extra_repr(self):
         return 'in_features={}, out_features={}, bias={}, c={}'.format(
             self.input_dim, self.output_dim, self.bias, self.c
         )
 
-
-import layers.hyp_layers as hyp_layers
 
 class HGCNDecoder(Decoder):
     """
@@ -89,9 +87,8 @@ class HGCNDecoder(Decoder):
     """
 
     def __init__(self, c, args):
-        super(HGCNDecoder, self).__init__(c,args)
+        super(HGCNDecoder, self).__init__(c, args)
         self.manifold = getattr(manifolds, args.manifold)()
-
 
         assert args.num_layers > 0
 
@@ -109,16 +106,23 @@ class HGCNDecoder(Decoder):
             act = acts[i]
             hgc_layers.append(
                 hyp_layers.HyperbolicGraphConvolution(
-                    self.manifold, in_dim, out_dim, c_in, c_out, args.dropout, act, args.bias, args.use_att,args.local_agg,
-                    att_type=args.att_type, att_logit=args.att_logit, decode=True
+                    self.manifold, in_dim, out_dim, c_in, c_out, args.dropout, act, args.bias, args.local_agg,
                 )
             )
 
         self.decoder = nn.Sequential(*hgc_layers)
         self.decode_adj = True
 
-    def decode(self, x, adj):
-        output = super(HGCNDecoder, self).decode(x, adj)
+    def decode(self, h, distances, edges, node_mask, edge_mask):
+        h_hyp = self.manifold.proj(
+            self.manifold.expmap0(
+                self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
+            ),
+            c=self.curvatures[0]
+        )
+
+        output = super(HGCNDecoder, self).decode(h_hyp, distances, edges, node_mask, edge_mask)
+
         return output
 
 
@@ -128,7 +132,7 @@ class HNNDecoder(Decoder):
     """
 
     def __init__(self, c, args):
-        super(HNNDecoder, self).__init__(c,args)
+        super(HNNDecoder, self).__init__(c, args)
         self.manifold = getattr(manifolds, args.manifold)()
 
         assert args.num_layers > 0
@@ -156,11 +160,14 @@ class HNNDecoder(Decoder):
         self.decoder = nn.Sequential(*hnn_layers)
         self.decode_adj = False
 
-    def decode(self, x, adj):
-        x_hyp = self.manifold.proj(
-            self.manifold.expmap0(self.manifold.proj_tan0(x, self.curvatures[0]), c=self.curvatures[0]),
-            c=self.curvatures[0])
-        output = super(HNNDecoder, self).decode(x_hyp, adj)
+    def decode(self, h, distances, edges, node_mask, edge_mask):
+        h_hyp = self.manifold.proj(
+            self.manifold.expmap0(
+                self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
+            ),
+            c=self.curvatures[0]
+        )
+        output = super(HNNDecoder, self).decode(h_hyp, distances, edges, node_mask, edge_mask)
 
         return output
 
@@ -171,4 +178,3 @@ model2decoder = {
     'HGCN': HGCNDecoder,
     'MLP': LinearDecoder,
 }
-

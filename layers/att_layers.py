@@ -5,23 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-def unsorted_segment_sum(data, segment_ids, num_segments, normalization_factor, aggregation_method: str):
-    """Custom PyTorch op to replicate TensorFlow's `unsorted_segment_sum`.
-        Normalization: 'sum' or 'mean'.
-    """
-    result_shape = (num_segments, data.size(1))
-    result = data.new_full(result_shape, 0)  # Init empty result tensor.
-    segment_ids = segment_ids.unsqueeze(-1).expand(-1, data.size(1))
-    result.scatter_add_(0, segment_ids, data)
-    if aggregation_method == 'sum':
-        result = result / normalization_factor
 
-    if aggregation_method == 'mean':
-        norm = data.new_zeros(result.shape)
-        norm.scatter_add_(0, segment_ids, data.new_ones(data.shape))
-        norm[norm == 0] = 1
-        result = result / norm
-    return result
 def calc_gaussian(x,h):
     molecule = x*x
     demominator = 2*h*h
@@ -33,168 +17,46 @@ class DenseAtt(nn.Module):
         self.dropout = dropout
         self.linear = nn.Sequential(
             nn.Linear(2 * in_features+1, 2 * in_features, bias=True),
-            nn.ReLU(),
-            nn.Linear(2 * in_features, 1, bias=True)
+            nn.SiLU(),
+            nn.Linear(2 * in_features, in_features, bias=True),
+            nn.SiLU(),
         )
-        self.h_gauss = nn.Parameter(torch.Tensor(1),requires_grad=True)
+        self.att_mlp = nn.Sequential(
+            nn.Linear(in_features, 1),
+            nn.Sigmoid())
+        self.h_gauss = nn.Parameter(torch.Tensor(1))
         self.in_features = in_features
-        self.sigmoid = nn.Sigmoid()
 
-    def forward (self, x, x_tangent_self, adj):
+    def forward (self, x, x_tangent_self, distances, edge_mask):
         """
-         # (b,n_atom,n_atom,n_embed) 所有原子在每个原子的切空间 和该原子的切空间
-        :param x:
-        :param adj:
-        :return:
+        Parameters
+        ----------
+        x (b*n_node*n_node,dim)
+        x_tangent_self (b*n_node*n_node,dim)
+        distances (b*n_node*n_node,1)
+        edge_mask (b*n_node*n_node,1)
+
+        Returns
+        -------
         """
         #prepare gauss kernel distance
-        dist, mask = adj
-        gauss_dist = calc_gaussian(dist,F.softplus(self.h_gauss)) * mask  # (b,n_atom,n_atom,1)
-        if x_tangent_self is None:
-            n = x.size(1)
-            # n x 1 x d
-            x_left = torch.unsqueeze(x, 2)
-            x_left = x_left.expand(-1,-1, n, -1)  # (b,n,n,d) 对同一个n0,n1相同
-            # 1 x n x d
-            x_right = torch.unsqueeze(x, 1)
-            x_right = x_right.expand(-1, n, -1, -1)  # (b,n,n,d) 对同一个n0,n1是0~atom_num
 
-            x_cat = torch.concat((x_left, x_right,gauss_dist.unsqueeze(3)), dim=3)  # (b,n,n,2*d)
-            att_adj = self.linear(x_cat).squeeze()  # (b,atom_num,atom_num)
-            # att_adj = self.sigmoid(att_adj)
+        gauss_dist = calc_gaussian(distances,F.softplus(self.h_gauss)) * edge_mask
 
-            att_adj = torch.mul(mask, att_adj)
-            neg_inf = torch.ones_like(att_adj) * -1e10
-            att_adj = torch.where(mask == 0, neg_inf, att_adj)
-            att_adj = F.softmax(att_adj, dim=2) * mask
-        else:
-            n = x.size(2)
-            x_left = x  # (b,n_atom,n_atom,n_embed)
-            x_right = x_tangent_self.unsqueeze(2) # (b,n_atom,n_embed)
-            x_right = x_right.expand(-1, -1, n, -1)  # (b,n,n,d)
+        x_left = x  # (b,n_node,n_node,dim)
+        x_right = x_tangent_self  # (b*n_node*n_node,dim)
 
-            x_cat = torch.concat((x_left, x_right,gauss_dist.unsqueeze(3)), dim=3)  # (b,n,n,2*d)
-            att_adj = self.linear(x_cat).squeeze()  # (b,atom_num,atom_num)
-            att_adj = torch.mul(mask, att_adj)
-            neg_inf = torch.ones_like(att_adj) * -1e10
-            att_adj = torch.where(att_adj == 0, neg_inf, att_adj)
-            att_adj = F.softmax(att_adj,dim=2) * mask
+        x_cat = torch.concat((x_left, x_right,gauss_dist), dim=1)  # (b*n*n,2*dim+1)
+
+        mij = self.linear(x_cat)  # (b*n_node*n_node,dim)
+
+        att = self.att_mlp(mij)  # (b*n_node*n_node,1)
+
+        att_adj = mij * att  # (b*n_node*n_node,dim)
+
+        return att_adj * edge_mask
 
 
-        return att_adj
 
 
-class SpecialSpmmFunction(torch.autograd.Function):
-    """Special function for only sparse region backpropataion layer."""
 
-    @staticmethod
-    def forward(ctx, indices, values, shape, b):
-        assert indices.requires_grad == False
-        a = torch.sparse_coo_tensor(indices, values, shape)
-        ctx.save_for_backward(a, b)
-        ctx.N = shape[0]
-        return torch.matmul(a, b)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        a, b = ctx.saved_tensors
-        grad_values = grad_b = None
-        if ctx.needs_input_grad[1]:
-            grad_a_dense = grad_output.matmul(b.t())
-            edge_idx = a._indices()[0, :] * ctx.N + a._indices()[1, :]
-            grad_values = grad_a_dense.view(-1)[edge_idx]
-        if ctx.needs_input_grad[3]:
-            grad_b = a.t().matmul(grad_output)
-        return None, grad_values, None, grad_b
-
-
-class SpecialSpmm(nn.Module):
-    def forward(self, indices, values, shape, b):
-        return SpecialSpmmFunction.apply(indices, values, shape, b)
-
-
-class SpGraphAttentionLayer(nn.Module):
-    """
-    Sparse version GAT layer, similar to https://arxiv.org/abs/1710.10903
-    """
-
-    def __init__(self, in_features, out_features, dropout, alpha, activation):
-        super(SpGraphAttentionLayer, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.alpha = alpha
-
-        self.W = nn.Parameter(torch.zeros(size=(in_features, out_features)))
-        nn.init.xavier_normal_(self.W.data, gain=1.414)
-
-        self.a = nn.Parameter(torch.zeros(size=(1, 2 * out_features)))
-        nn.init.xavier_normal_(self.a.data, gain=1.414)
-
-        self.dropout = nn.Dropout(dropout)
-        self.leakyrelu = nn.LeakyReLU(self.alpha)
-        self.special_spmm = SpecialSpmm()
-        self.act = activation
-
-    def forward(self, input, adj):
-        N = input.size()[0]
-        edge = adj._indices()
-
-        h = torch.mm(input, self.W)
-        # h: N x out
-        assert not torch.isnan(h).any()
-
-        # Self-attention on the nodes - Shared attention mechanism
-        edge_h = torch.cat((h[edge[0, :], :], h[edge[1, :], :]), dim=1).t()
-        # edge: 2*D x E
-
-        edge_e = torch.exp(-self.leakyrelu(self.a.mm(edge_h).squeeze()))
-        assert not torch.isnan(edge_e).any()
-        # edge_e: E
-
-        ones = torch.ones(size=(N, 1))
-        if h.is_cuda:
-            ones = ones.cuda()
-        e_rowsum = self.special_spmm(edge, edge_e, torch.Size([N, N]), ones)
-        # e_rowsum: N x 1
-
-        edge_e = self.dropout(edge_e)
-        # edge_e: E
-
-        h_prime = self.special_spmm(edge, edge_e, torch.Size([N, N]), h)
-        assert not torch.isnan(h_prime).any()
-        # h_prime: N x out
-
-        h_prime = h_prime.div(e_rowsum)
-        # h_prime: N x out
-        assert not torch.isnan(h_prime).any()
-        return self.act(h_prime)
-
-    def __repr__(self):
-        return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
-
-
-class GraphAttentionLayer(nn.Module):
-    def __init__(self, input_dim, output_dim, dropout, activation, alpha, nheads, concat):
-        """Sparse version of GAT."""
-        super(GraphAttentionLayer, self).__init__()
-        self.dropout = dropout
-        self.output_dim = output_dim
-        self.attentions = [SpGraphAttentionLayer(input_dim,
-                                                 output_dim,
-                                                 dropout=dropout,
-                                                 alpha=alpha,
-                                                 activation=activation) for _ in range(nheads)]
-        self.concat = concat
-        for i, attention in enumerate(self.attentions):
-            self.add_module('attention_{}'.format(i), attention)
-
-    def forward(self, input):
-        x, adj = input
-        x = F.dropout(x, self.dropout, training=self.training)
-        if self.concat:
-            h = torch.cat([att(x, adj) for att in self.attentions], dim=1)
-        else:
-            h_cat = torch.cat([att(x, adj).view((-1, self.output_dim, 1)) for att in self.attentions], dim=2)
-            h = torch.mean(h_cat, dim=2)
-        h = F.dropout(h, self.dropout, training=self.training)
-        return (h, adj)

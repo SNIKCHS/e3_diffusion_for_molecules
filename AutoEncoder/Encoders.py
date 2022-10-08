@@ -26,7 +26,7 @@ class Encoder(nn.Module):
             n_atom_embed = args.dim - 2
         else:
             n_atom_embed = args.dim - 1
-        self.embedding = nn.Embedding(args.max_z, n_atom_embed, padding_idx=0)
+        self.embedding = nn.Embedding(args.max_z, n_atom_embed, padding_idx=0)  # qm9 max_z=6
 
     def forward(self, x, categories, charges, edges, node_mask, edge_mask):
         h = self.embedding(categories)  # (b,n_atom,n_atom_embed)
@@ -41,17 +41,17 @@ class Encoder(nn.Module):
         distances, _ = coord2diff(x, edges)  # (b*n_node*n_node,1)
 
         if self.manifold.name == 'Hyperboloid':
-            o = torch.zeros((b * n_nodes, 1))
+            o = torch.zeros((b * n_nodes, 1),device=h.device)
             h = torch.cat([o, h], dim=1)  # (b*n_atom,dim)
         return self.encode(h, distances, edges, node_mask, edge_mask)
 
     def encode(self,h, distances, edges, node_mask, edge_mask):
         if self.massage_passing:
             input = (h, distances, edges, node_mask, edge_mask)
-            output, _ = self.layers(input)
+            output, distances, edges, node_mask, edge_mask = self.layers(input)
         else:
             output = self.layers(h)
-        return output
+        return output, distances, edges, node_mask, edge_mask
 
 
 class MLP(Encoder):
@@ -104,13 +104,13 @@ class HNN(Encoder):
             c=self.curvatures[0]
         )
 
-        output = super(HNN, self).encode( h_hyp, distances, edges, node_mask, edge_mask)
+        output, distances, edges, node_mask, edge_mask = super(HNN, self).encode( h_hyp, distances, edges, node_mask, edge_mask)
 
         output = self.manifold.proj_tan0(
             self.manifold.logmap0(output, self.curvatures[-1]),
             c=self.curvatures[-1]
         )
-        return output
+        return output, distances, edges, node_mask, edge_mask
 
 
 class GCN(Encoder):
@@ -149,8 +149,7 @@ class HGCN(Encoder):
             act = acts[i]
             hgc_layers.append(
                 HyperbolicGraphConvolution(
-                    self.manifold, in_dim, out_dim, c_in, c_out, args.dropout, act, args.bias, args.use_att,
-                    args.local_agg
+                    self.manifold, in_dim, out_dim, c_in, c_out, args.dropout, act, args.bias, args.local_agg
                 )
             )
         self.layers = nn.Sequential(*hgc_layers)
@@ -164,11 +163,11 @@ class HGCN(Encoder):
             c=self.curvatures[0]
         )
 
-        output = super(HGCN, self).encode(h_hyp, distances, edges, node_mask, edge_mask)
+        output, distances, edges, node_mask, edge_mask = super(HGCN, self).encode(h_hyp, distances, edges, node_mask, edge_mask)
 
         output = self.manifold.proj_tan0(
             self.manifold.logmap0(output, self.curvatures[-1]),
             c=self.curvatures[-1]
         )
-        return output
+        return output, distances, edges, node_mask, edge_mask
 

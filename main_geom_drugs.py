@@ -6,7 +6,7 @@ except ModuleNotFoundError:
 import build_geom_dataset
 from configs.datasets_config import geom_with_h
 import copy
-import utils
+import utils.utils as utils
 import argparse
 import wandb
 from os.path import join

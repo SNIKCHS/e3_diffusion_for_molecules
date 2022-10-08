@@ -24,6 +24,7 @@ class Hyperboloid(Manifold):
 
     def minkowski_dot(self, x, y, keepdim=True):
         res = torch.sum(x * y, dim=-1) - 2 * x[..., 0] * y[..., 0]
+
         if keepdim:
             res = res.view(res.shape + (1,))
         return res
@@ -119,9 +120,7 @@ class Hyperboloid(Manifold):
         :return:
         """
         K = 1. / c
-
         xy = torch.clamp(self.minkowski_dot(x, y) + K, max=-self.eps[x.dtype]) - K
-
         u = y + xy * x * c
         normu = self.minkowski_norm(u)
         normu = torch.clamp(normu, min=self.min_norm)
