@@ -249,17 +249,17 @@ def main():
                 if args.save_model:
                     args.current_epoch = epoch + 1
                     utils.save_model(optim, 'outputs/%s/optim.npy' % args.exp_name)
-                    utils.save_model(model, 'outputs/%s/generative_model.npy' % args.exp_name)
+                    utils.save_model(model, 'outputs/%s/AE.npy' % args.exp_name)
                     if args.ema_decay > 0:
-                        utils.save_model(model_ema, 'outputs/%s/generative_model_ema.npy' % args.exp_name)
+                        utils.save_model(model_ema, 'outputs/%s/AE_ema.npy' % args.exp_name)
                     with open('outputs/%s/args.pickle' % args.exp_name, 'wb') as f:
                         pickle.dump(args, f)
 
                 if args.save_model:
                     utils.save_model(optim, 'outputs/%s/optim_%d.npy' % (args.exp_name, epoch))
-                    utils.save_model(model, 'outputs/%s/generative_model_%d.npy' % (args.exp_name, epoch))
+                    utils.save_model(model, 'outputs/%s/AE_%d.npy' % (args.exp_name, epoch))
                     if args.ema_decay > 0:
-                        utils.save_model(model_ema, 'outputs/%s/generative_model_ema_%d.npy' % (args.exp_name, epoch))
+                        utils.save_model(model_ema, 'outputs/%s/AE_ema_%d.npy' % (args.exp_name, epoch))
                     with open('outputs/%s/args_%d.pickle' % (args.exp_name, epoch), 'wb') as f:
                         pickle.dump(args, f)
             # print('Val loss: %.4f \t Test loss:  %.4f' % (nll_val, nll_test))
