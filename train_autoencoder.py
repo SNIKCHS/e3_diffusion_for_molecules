@@ -26,15 +26,16 @@ parser.add_argument('--lr', type=float, default=2e-4)
 parser.add_argument('--dropout', type=float, default=0.0)
 parser.add_argument('--dim', type=int, default=20)
 parser.add_argument('--num_layers', type=int, default=4)
+parser.add_argument('--ode_regularization', type=float, default=1e-2)
 parser.add_argument('--bias', type=int, default=1)
 parser.add_argument('--max_z', type=int, default=6)
 parser.add_argument('--device', type=str, default='cuda')
-parser.add_argument('--model', type=str, default='MLP',
+parser.add_argument('--model', type=str, default='GCN',
                     help='MLP,HNN,GCN,HGCN')
 parser.add_argument('--manifold', type=str, default='Euclidean',
                     help='Euclidean, Hyperboloid, PoincareBall')
 parser.add_argument('--c', type=float, default=None)
-parser.add_argument('--act', type=str, default='selu',
+parser.add_argument('--act', type=str, default='relu',
                     help='relu,silu,selu')
 parser.add_argument('--local_agg', type=int, default=1)
 parser.add_argument('--encdec_share_curvature', type=eval, default=False,
@@ -53,7 +54,6 @@ parser.add_argument('--clip_grad', type=eval, default=True,
 parser.add_argument('--trace', type=str, default='hutch',
                     help='hutch | exact')
 # <-- EGNN args
-parser.add_argument('--ode_regularization', type=float, default=1e-3)
 parser.add_argument('--dataset', type=str, default='qm9',
                     help='qm9 | qm9_second_half (train only on the last 50K samples of the training dataset)')
 parser.add_argument('--datadir', type=str, default='qm9/temp',

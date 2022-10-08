@@ -15,7 +15,8 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.c = c
         self.out = nn.Sequential(
-            nn.Linear(args.dim,args.max_z)
+            nn.Linear(args.dim,args.max_z),
+            # nn.Sigmoid()
         )
 
     def decode(self, h, distances, edges, node_mask, edge_mask):

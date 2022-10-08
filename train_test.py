@@ -48,8 +48,8 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         nll, reg_term = model(x, h, node_mask, edge_mask)
 
         # standard nll from forward KL
-        # loss = nll + args.ode_regularization * reg_term
-        loss = nll
+        loss = nll + args.ode_regularization * reg_term
+        # loss = nll
         # with torch.autograd.detect_anomaly():
         loss.backward()
 
@@ -63,7 +63,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         optim.step()
         # for name,p in model.named_parameters():
         #     print(name,torch.any(torch.isnan(p)))
-        if args.model != 'MLP' and args.c is None:
+        if args.model not in ['MLP','GCN'] and args.c is None:
             en_curvatures = model.get_submodule('encoder.curvatures')
             for p in en_curvatures.parameters():
                 p.data.clamp_(1e-8)

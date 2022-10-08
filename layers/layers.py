@@ -63,19 +63,17 @@ class GraphConvolution(Module):
         self.aggregation_method = 'sum'
         self.edge_mlp = nn.Sequential(
             nn.Linear(2*in_features + 1, in_features),
-            self.act,
-            nn.Linear(in_features, in_features),
-            self.act)
+            nn.SiLU(),
+            nn.Linear(in_features, in_features))
 
         self.node_mlp = nn.Sequential(
             nn.Linear(2*in_features, in_features),
-            self.act,
+            nn.SiLU(),
             nn.Linear(in_features, in_features))
 
-        if self.attention:
-            self.att_mlp = nn.Sequential(
-                nn.Linear(in_features, 1),
-                nn.Sigmoid())
+        self.att_mlp = nn.Sequential(
+            nn.Linear(in_features, 1),
+            nn.Sigmoid())
 
     def forward(self, input):
         h, distances, edges, node_mask, edge_mask = input
