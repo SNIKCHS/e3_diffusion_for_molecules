@@ -94,7 +94,7 @@ class HypLinear(nn.Module):
         self.use_bias = use_bias
         self.bias = nn.Parameter(torch.Tensor(1, out_features))
         self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
-        self.ln = nn.LayerNorm(in_features)
+        self.ln = nn.InstanceNorm1d(in_features)  # LayerNorm also work
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -159,7 +159,7 @@ class HypAgg(Module):
             nn.Linear(in_features, in_features))
 
     def forward(self, x, distances, edges, node_mask, edge_mask):
-        x = torch.clamp(x, min=-1e4, max=1e4)  # 需要clamp 否则初期数值过大
+        # x = torch.clamp(x, min=-1e4, max=1e4)  # 需要clamp 否则初期数值过大
         x_tangent = self.manifold.logmap0(x, c=self.c)  # (b*n_node,dim)
 
         row, col = edges
@@ -179,7 +179,7 @@ class HypAgg(Module):
             agg = torch.cat([x_local_self_tangent, agg], dim=1)  # (b*n_nodes,2*dim)
             out = x_local_self_tangent + self.node_mlp(agg)  # residual connect
             support_t = self.manifold.proj_tan(out, x, self.c)
-            support_t = torch.clamp(support_t, min=-1e6, max=1e6)
+            # support_t = torch.clamp(support_t, min=-1e6, max=1e6)
             output = self.manifold.proj(self.manifold.expmap(support_t, x, c=self.c), c=self.c)
         else:
             edge_feat = self.att(x_tangent[row], x_tangent[col], distances, edge_mask)  # (b*atom_num*atom_num,dim)
@@ -189,7 +189,7 @@ class HypAgg(Module):
             agg = torch.cat([x_tangent, agg], dim=1)
             out = x_tangent + self.node_mlp(agg)
             support_t = self.manifold.proj_tan0(out, self.c)
-            support_t = torch.clamp(support_t, min=-1e6, max=1e6)
+            # support_t = torch.clamp(support_t, min=-1e6, max=1e6)
             output = self.manifold.proj(self.manifold.expmap0(support_t, c=self.c), c=self.c)
         # output = torch.clamp(output, min=-1e6, max=1e6)
         return output
