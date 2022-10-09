@@ -116,7 +116,6 @@ class HGCNDecoder(Decoder):
 
     def decode(self, h, distances, edges, node_mask, edge_mask):
 
-        # 映射到流形上会导致初期训练不太稳定
         h = self.manifold.proj(
             self.manifold.expmap0(
                 self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
