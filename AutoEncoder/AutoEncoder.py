@@ -32,7 +32,7 @@ class HyperbolicAE(nn.Module):
         KLD = torch.clamp(KLD, min=0, max=1e2)
         output = self.decoder.decode(h, distances, edges, node_mask, edge_mask)
         # print('dec:', output)
-        # print('dec', torch.any(torch.isnan(output)).item())
+        # print('dec:', torch.any(torch.isnan(output)).item())
         return self.compute_loss(categories, output), KLD
 
     def compute_loss(self, x, x_hat):
@@ -46,13 +46,15 @@ class HyperbolicAE(nn.Module):
         # positions_pred = self.manifold.logmap0(positions_pred,self.decoder.curvatures[-1])
         n_type = x_hat.size(-1)
         atom_loss_f = nn.CrossEntropyLoss(reduction='sum')
+        # print('x', torch.any(torch.isnan(x)).item())
         # print('x_hat', torch.any(torch.isnan(x_hat)).item())
         loss = atom_loss_f(x_hat.view(-1, n_type), x.view(-1))/b
         # print('loss',torch.any(torch.isnan(loss)).item())
+        # print(x_hat[:20])
         # print(x_hat.softmax(dim=-1).view(-1, n_type)[:2])
         # print(x.view(-1)[:2])
         # exit(0)
-        return loss.sum()
+        return loss
 
     def get_adj_matrix(self, n_nodes, batch_size):
         # 对每个n_nodes，batch_size只要算一次

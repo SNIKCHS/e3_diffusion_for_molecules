@@ -44,11 +44,11 @@ class HNNLayer(nn.Module):
         self.hyp_act = HypAct(manifold, c_in, c_out, act)
 
     def forward(self, h):
-        # print('h:', torch.any(torch.isnan(h)))
+        # print('h:', torch.any(torch.isnan(h)).item())
         h = self.linear.forward(h)
-        # print('linear:', torch.any(torch.isnan(h)))
+        # print('linear:', torch.any(torch.isnan(h)).item())
         h = self.hyp_act.forward(h)
-        # print('hyp_act:', torch.any(torch.isnan(h)))
+        # print('hyp_act:', torch.any(torch.isnan(h)).item())
         return h
 
 
@@ -92,7 +92,7 @@ class HypLinear(nn.Module):
         self.c = c
         self.dropout = dropout
         self.use_bias = use_bias
-        self.bias = nn.Parameter(torch.Tensor(out_features))
+        self.bias = nn.Parameter(torch.Tensor(1, out_features))
         self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
         self.reset_parameters()
 
@@ -111,6 +111,7 @@ class HypLinear(nn.Module):
             hyp_bias = self.manifold.proj(hyp_bias, self.c)
             res = self.manifold.mobius_add(res, hyp_bias, c=self.c)
             res = self.manifold.proj(res, self.c)
+
         return res
 
     def extra_repr(self):
@@ -156,7 +157,7 @@ class HypAgg(Module):
             nn.Linear(in_features, in_features))
 
     def forward(self, x, distances, edges, node_mask, edge_mask):
-        # x = torch.clamp(x, min=-1e3, max=1e3)
+        x = torch.clamp(x, min=-1e3, max=1e3)  # 需要clamp 否则初期数值过大
         x_tangent = self.manifold.logmap0(x, c=self.c)  # (b*n_node,dim)
 
         row, col = edges
@@ -167,7 +168,6 @@ class HypAgg(Module):
             x_local_tangent = self.manifold.logmap(x_row, x_col, c=self.c)  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
             # print('x_local_tangent:', torch.any(torch.isnan(x_local_tangent)).item())
             x_local_self_tangent = self.manifold.logmap(x, x, c=self.c)  # (b*n_atom,dim)
-
             edge_feat = self.att(x_local_tangent, x_local_self_tangent[row], distances, edge_mask)  # (b*n_node*n_node,dim)
             # print('edge_feat:', torch.any(torch.isnan(edge_feat)).item())
             agg = unsorted_segment_sum(edge_feat, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
@@ -189,7 +189,7 @@ class HypAgg(Module):
             support_t = self.manifold.proj_tan0(out, self.c)
             support_t = torch.clamp(support_t, min=-1e6, max=1e6)
             output = self.manifold.proj(self.manifold.expmap0(support_t, c=self.c), c=self.c)
-
+        # output = torch.clamp(output, min=-1e6, max=1e6)
         return output
 
     def extra_repr(self):

@@ -115,14 +115,16 @@ class HGCNDecoder(Decoder):
         self.decode_adj = True
 
     def decode(self, h, distances, edges, node_mask, edge_mask):
-        h_hyp = self.manifold.proj(
+
+        # 映射到流形上会导致初期训练不太稳定
+        h = self.manifold.proj(
             self.manifold.expmap0(
                 self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
             ),
             c=self.curvatures[0]
         )
 
-        output = super(HGCNDecoder, self).decode(h_hyp, distances, edges, node_mask, edge_mask)
+        output = super(HGCNDecoder, self).decode(h, distances, edges, node_mask, edge_mask)
 
         return output
 

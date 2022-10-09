@@ -53,6 +53,16 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         # with torch.autograd.detect_anomaly():
         loss.backward()
 
+        # for p in model.parameters():
+        #     zero = torch.full_like(p.grad, 0)
+        #     p.grad = torch.where(torch.isnan(p.grad), zero, p.grad)
+        #     p.grad = torch.where(p.grad>1e6, p.grad/1e20, p.grad)
+        #     p.grad = torch.where(p.grad<-1e6, p.grad / 1e20, p.grad)
+        #     p = torch.where(torch.isnan(p), zero, p)
+
+        # for name,p in model.named_parameters():
+        #     print(name,p)
+
         if args.clip_grad:
             grad_norm = utils.gradient_clipping(model, gradnorm_queue)
         else:
@@ -80,10 +90,13 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         if args.ema_decay > 0:
             ema.update_model_average(model_ema, model)
 
-        # assert torch.isnan(loss)
+        # print(loss)
+
         # if torch.isnan(loss):
-        #     for name,p in model.named_parameters():
-        #         print(name,p.grad)
+        #     # for name,p in model.named_parameters():
+        #     #     print(name,p.grad)
+        #
+        #     print(loss)
         #     exit(0)
 
         if i % args.n_report_steps == 0:

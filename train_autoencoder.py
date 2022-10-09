@@ -22,7 +22,7 @@ parser.add_argument('--exp_name', type=str, default='AutoEncoder')
 
 parser.add_argument('--n_epochs', type=int, default=200)
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--lr', type=float, default=2e-4)
+parser.add_argument('--lr', type=float, default=1e-3)
 parser.add_argument('--dropout', type=float, default=0.0)
 parser.add_argument('--dim', type=int, default=20)
 parser.add_argument('--num_layers', type=int, default=4)
@@ -30,12 +30,12 @@ parser.add_argument('--ode_regularization', type=float, default=1e-2)
 parser.add_argument('--bias', type=int, default=1)
 parser.add_argument('--max_z', type=int, default=6)
 parser.add_argument('--device', type=str, default='cuda')
-parser.add_argument('--model', type=str, default='HNN',
+parser.add_argument('--model', type=str, default='HGCN',
                     help='MLP,HNN,GCN,HGCN')
 parser.add_argument('--manifold', type=str, default='Hyperboloid',
                     help='Euclidean, Hyperboloid, PoincareBall')
 parser.add_argument('--c', type=float, default=None)
-parser.add_argument('--act', type=str, default='relu',
+parser.add_argument('--act', type=str, default='selu',
                     help='relu,silu,selu,leaky_relu')
 parser.add_argument('--local_agg', type=int, default=1)
 parser.add_argument('--encdec_share_curvature', type=eval, default=False,
