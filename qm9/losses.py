@@ -12,8 +12,7 @@ def assert_correctly_masked(variable, node_mask):
 def compute_loss_and_nll(args, generative_model, nodes_dist, x, h, node_mask, edge_mask, context):
     bs, n_nodes, n_dims = x.size()
 
-
-    if args.probabilistic_model == 'diffusion':
+    if args.probabilistic_model == 'diffusion' or args.probabilistic_model == 'hyperbolic_diffusion':
         edge_mask = edge_mask.view(bs, n_nodes * n_nodes)
 
         assert_correctly_masked(x, node_mask)

@@ -41,7 +41,7 @@ def polynomial_schedule(timesteps: int, s=1e-4, power=3.):
     """
     steps = timesteps + 1
     x = np.linspace(0, steps, steps)
-    alphas2 = (1 - np.power(x / steps, power))**2
+    alphas2 = (1 - np.power(x / steps, power)) ** 2
 
     alphas2 = clip_noise_schedule(alphas2, clip_value=0.001)
 
@@ -76,7 +76,7 @@ def gaussian_entropy(mu, sigma):
     # In case sigma needed to be broadcast (which is very likely in this code).
     zeros = torch.zeros_like(mu)
     return sum_except_batch(
-        zeros + 0.5 * torch.log(2 * np.pi * sigma**2) + 0.5
+        zeros + 0.5 * torch.log(2 * np.pi * sigma ** 2) + 0.5
     )
 
 
@@ -92,12 +92,12 @@ def gaussian_KL(q_mu, q_sigma, p_mu, p_sigma, node_mask):
             The KL distance, summed over all dimensions except the batch dim.
         """
     return sum_except_batch(
-            (
+        (
                 torch.log(p_sigma / q_sigma)
-                + 0.5 * (q_sigma**2 + (q_mu - p_mu)**2) / (p_sigma**2)
+                + 0.5 * (q_sigma ** 2 + (q_mu - p_mu) ** 2) / (p_sigma ** 2)
                 - 0.5
-            ) * node_mask
-        )
+        ) * node_mask
+    )
 
 
 def gaussian_KL_for_dimension(q_mu, q_sigma, p_mu, p_sigma, d):
@@ -111,10 +111,10 @@ def gaussian_KL_for_dimension(q_mu, q_sigma, p_mu, p_sigma, d):
         Returns:
             The KL distance, summed over all dimensions except the batch dim.
         """
-    mu_norm2 = sum_except_batch((q_mu - p_mu)**2)
+    mu_norm2 = sum_except_batch((q_mu - p_mu) ** 2)
     assert len(q_sigma.size()) == 1
     assert len(p_sigma.size()) == 1
-    return d * torch.log(p_sigma / q_sigma) + 0.5 * (d * q_sigma**2 + mu_norm2) / (p_sigma**2) - 0.5 * d
+    return d * torch.log(p_sigma / q_sigma) + 0.5 * (d * q_sigma ** 2 + mu_norm2) / (p_sigma ** 2) - 0.5 * d
 
 
 class PositiveLinear(torch.nn.Module):
@@ -165,12 +165,13 @@ class SinusoidalPosEmb(torch.nn.Module):
         emb = x[:, None] * emb[None, :]
         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
         return emb
-    
+
 
 class PredefinedNoiseSchedule(torch.nn.Module):
     """
     Predefined noise schedule. Essentially creates a lookup array for predefined (non-learned) noise schedules.
     """
+
     def __init__(self, noise_schedule, timesteps, precision):
         super(PredefinedNoiseSchedule, self).__init__()
         self.timesteps = timesteps
@@ -207,6 +208,7 @@ class PredefinedNoiseSchedule(torch.nn.Module):
 
 class GammaNetwork(torch.nn.Module):
     """The gamma network models a monotonic increasing function. Construction as in the VDM paper."""
+
     def __init__(self):
         super().__init__()
 
@@ -253,6 +255,7 @@ class EnVariationalDiffusion(torch.nn.Module):
     """
     The E(n) Diffusion Module.
     """
+
     def __init__(
             self,
             dynamics: models.EGNN_dynamics_QM9, in_node_nf: int, n_dims: int,
@@ -309,8 +312,8 @@ class EnVariationalDiffusion(torch.nn.Module):
                 f'large with sigma_0 {sigma_0:.5f} and '
                 f'1 / norm_value = {1. / max_norm_value}')
 
-    def phi(self, x, t, node_mask, edge_mask, context):
-        net_out = self.dynamics._forward(t, x, node_mask, edge_mask, context)
+    def phi(self, x, t, node_mask, edge_mask, context, edge = None):
+        net_out = self.dynamics._forward(t, x, node_mask, edge_mask, context,edge)
 
         return net_out
 
@@ -339,19 +342,20 @@ class EnVariationalDiffusion(torch.nn.Module):
         number_of_nodes = torch.sum(node_mask.squeeze(2), dim=1)
         return (number_of_nodes - 1) * self.n_dims
 
-    def normalize(self, x, h, node_mask):
+    def normalize(self, x, h=None, node_mask=None):
         x = x / self.norm_values[0]
         delta_log_px = -self.subspace_dimensionality(node_mask) * np.log(self.norm_values[0])
 
-        # Casting to float in case h still has long or int type.
-        h_cat = (h['categorical'].float() - self.norm_biases[1]) / self.norm_values[1] * node_mask
-        h_int = (h['integer'].float() - self.norm_biases[2]) / self.norm_values[2]
+        if h is not None:
+            # Casting to float in case h still has long or int type.
+            h_cat = (h['categorical'].float() - self.norm_biases[1]) / self.norm_values[1] * node_mask
+            h_int = (h['integer'].float() - self.norm_biases[2]) / self.norm_values[2]
 
-        if self.include_charges:
-            h_int = h_int * node_mask
+            if self.include_charges:
+                h_int = h_int * node_mask
 
-        # Create new h dictionary.
-        h = {'categorical': h_cat, 'integer': h_int}
+            # Create new h dictionary.
+            h = {'categorical': h_cat, 'integer': h_int}
 
         return x, h, delta_log_px
 
@@ -368,8 +372,8 @@ class EnVariationalDiffusion(torch.nn.Module):
 
     def unnormalize_z(self, z, node_mask):
         # Parse from z
-        x, h_cat = z[:, :, 0:self.n_dims], z[:, :, self.n_dims:self.n_dims+self.num_classes]
-        h_int = z[:, :, self.n_dims+self.num_classes:self.n_dims+self.num_classes+1]
+        x, h_cat = z[:, :, 0:self.n_dims], z[:, :, self.n_dims:self.n_dims + self.num_classes]
+        h_int = z[:, :, self.n_dims + self.num_classes:self.n_dims + self.num_classes + 1]
         assert h_int.size(2) == self.include_charges
 
         # Unnormalize
@@ -614,7 +618,7 @@ class EnVariationalDiffusion(torch.nn.Module):
             n_samples=x.size(0), n_nodes=x.size(1), node_mask=node_mask)
 
         # Concatenate x, h[integer] and h[categorical].
-        xh = torch.cat([x, h['categorical'], h['integer']], dim=2)  #(b,n_nodes,3+5(onehot)+1)
+        xh = torch.cat([x, h['categorical'], h['integer']], dim=2)  # (b,n_nodes,3+5(onehot)+1)
 
         # Sample z_t given x, h for timestep t, from q(z_t | x, h)
         z_t = alpha_t * xh + sigma_t * eps
@@ -867,3 +871,210 @@ class EnVariationalDiffusion(torch.nn.Module):
         print(info)
 
         return info
+
+
+class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
+    def __init__(
+            self, Encoder, Decoder,
+            dynamics: models.EGNN_dynamics_QM9, in_node_nf: int, n_dims: int,
+            timesteps: int = 1000, parametrization='eps', noise_schedule='learned',
+            noise_precision=1e-4, loss_type='vlb', norm_values=(1., 1., 1.),
+            norm_biases=(None, 0., 0.), include_charges=True,device='cuda'
+    ):
+        super().__init__(dynamics, in_node_nf, n_dims, timesteps, parametrization, noise_schedule,
+                         noise_precision, loss_type, norm_values, norm_biases, include_charges)
+        self.Encoder = Encoder
+        self.Decoder = Decoder
+        self._edges_dict = {}
+        self.device = device
+
+    def forward(self, x, h, node_mask=None, edge_mask=None, context=None):
+        """
+        Computes the loss (type l2 or NLL) if training. And if eval then always computes NLL.
+        """
+        # Normalize data, take into account volume change in x.
+        x, _, delta_log_px = self.normalize(x, None, node_mask)
+        categories, charges = h
+        batch_size, n_nodes = categories.shape
+        edges = self.get_adj_matrix(n_nodes, batch_size)
+        h, distances, edges, _, _ = self.Encoder(x, categories, charges, edges, node_mask, edge_mask)
+        h = h.view(batch_size,n_nodes,-1)
+        # Reset delta_log_px if not vlb objective.
+        if self.training and self.loss_type == 'l2':
+            delta_log_px = torch.zeros_like(delta_log_px)
+
+        if self.training:
+            # Only 1 forward pass when t0_always is False.
+            loss, loss_dict = self.compute_loss(x, h, node_mask, edge_mask, context, t0_always=False,edge=edges)
+        else:
+            # Less variance in the estimator, costs two forward passes.
+            loss, loss_dict = self.compute_loss(x, h, node_mask, edge_mask, context, t0_always=True,edge=edges)
+
+        neg_log_pxh = loss
+
+        # Correct for normalization on x.
+        assert neg_log_pxh.size() == delta_log_px.size()
+        neg_log_pxh = neg_log_pxh - delta_log_px
+
+        return neg_log_pxh
+
+    def compute_loss(self, x, h, node_mask, edge_mask, context, t0_always,edge = None):
+        """
+        主要计算部分
+        Parameters
+        ----------
+        x
+        h (b,n_nodes,dim)
+        node_mask
+        edge_mask
+        context
+        t0_always
+
+        Returns
+        -------
+
+        """
+        """Computes an estimator for the variational lower bound, or the simple loss (MSE)."""
+
+        # This part is about whether to include loss term 0 always.
+        if t0_always:
+            # loss_term_0 will be computed separately.
+            # estimator = loss_0 + loss_t,  where t ~ U({1, ..., T})
+            lowest_t = 1
+        else:
+            # estimator = loss_t,           where t ~ U({0, ..., T})
+            lowest_t = 0
+
+        # Sample a timestep t.
+        t_int = torch.randint(
+            lowest_t, self.T + 1, size=(x.size(0), 1), device=x.device).float()
+        s_int = t_int - 1  # t的前一个时间步
+        t_is_zero = (t_int == 0).float()  # Important to compute log p(x | z0).
+
+        # Normalize t to [0, 1]. Note that the negative
+        # step of s will never be used, since then p(x | z0) is computed.
+        s = s_int / self.T
+        t = t_int / self.T
+
+        # Compute gamma_s and gamma_t via the network.
+        gamma_s = self.inflate_batch_array(self.gamma(s), x)
+        gamma_t = self.inflate_batch_array(self.gamma(t), x)
+
+        # Compute alpha_t and sigma_t from gamma.
+        alpha_t = self.alpha(gamma_t, x)  # 均值系数
+        sigma_t = self.sigma(gamma_t, x)  # 方差系数
+
+        # Sample zt ~ Normal(alpha_t x, sigma_t)
+        eps = self.sample_combined_position_feature_noise(
+            n_samples=x.size(0), n_nodes=x.size(1), node_mask=node_mask)
+
+        # Concatenate x, h.
+        xh = torch.cat([x, h], dim=2)  # (b,n_nodes,3+dim)
+
+        # Sample z_t given x, h for timestep t, from q(z_t | x, h)
+        z_t = alpha_t * xh + sigma_t * eps
+        """去噪过程"""
+        diffusion_utils.assert_mean_zero_with_mask(z_t[:, :, :self.n_dims], node_mask)
+
+        # Neural net prediction. 拟合噪声
+        net_out = self.phi(z_t, t, node_mask, edge_mask, context,edge)
+
+        # Compute the error.
+        error = self.compute_error(net_out, gamma_t, eps)
+
+        if self.training and self.loss_type == 'l2':
+            SNR_weight = torch.ones_like(error)
+        else:
+            # Compute weighting with SNR: (SNR(s-t) - 1) for epsilon parametrization.
+            SNR_weight = (self.SNR(gamma_s - gamma_t) - 1).squeeze(1).squeeze(1)
+        assert error.size() == SNR_weight.size()
+        loss_t_larger_than_zero = 0.5 * SNR_weight * error
+
+        # The _constants_ depending on sigma_0 from the
+        # cross entropy term E_q(z0 | x) [log p(x | z0)].
+        neg_log_constants = -self.log_constants_p_x_given_z0(x, node_mask)
+
+        # Reset constants during training with l2 loss.
+        if self.training and self.loss_type == 'l2':
+            neg_log_constants = torch.zeros_like(neg_log_constants)
+
+        # The KL between q(z1 | x) and p(z1) = Normal(0, 1). Should be close to zero.
+        kl_prior = self.kl_prior(xh, node_mask)
+
+        # Combining the terms
+        if t0_always:
+            loss_t = loss_t_larger_than_zero
+            num_terms = self.T  # Since t=0 is not included here.
+            estimator_loss_terms = num_terms * loss_t
+
+            # Compute noise values for t = 0.
+            t_zeros = torch.zeros_like(s)
+            gamma_0 = self.inflate_batch_array(self.gamma(t_zeros), x)
+            alpha_0 = self.alpha(gamma_0, x)
+            sigma_0 = self.sigma(gamma_0, x)
+
+            # Sample z_0 given x, h for timestep t, from q(z_t | x, h)
+            eps_0 = self.sample_combined_position_feature_noise(
+                n_samples=x.size(0), n_nodes=x.size(1), node_mask=node_mask)
+            z_0 = alpha_0 * xh + sigma_0 * eps_0
+
+            net_out = self.phi(z_0, t_zeros, node_mask, edge_mask, context) # 预测噪声
+
+            # loss_term_0 = -self.log_pxh_given_z0_without_constants(
+            #     x, h, z_0, gamma_0, eps_0, net_out, node_mask)
+            loss_term_0 = -0.5 * self.compute_error(net_out, gamma_t, eps)
+
+            assert kl_prior.size() == estimator_loss_terms.size()
+            assert kl_prior.size() == neg_log_constants.size()
+            assert kl_prior.size() == loss_term_0.size()
+
+            loss = kl_prior + estimator_loss_terms + neg_log_constants + loss_term_0
+
+        else:
+            # Computes the L_0 term (even if gamma_t is not actually gamma_0)
+            # and this will later be selected via masking.
+
+            loss_term_0 = -0.5 * self.compute_error(net_out, gamma_t, eps)
+
+            t_is_not_zero = 1 - t_is_zero
+
+            loss_t = loss_term_0 * t_is_zero.squeeze() + t_is_not_zero.squeeze() * loss_t_larger_than_zero
+
+            # Only upweigh estimator if using the vlb objective.
+            if self.training and self.loss_type == 'l2':
+                estimator_loss_terms = loss_t
+            else:
+                num_terms = self.T + 1  # Includes t = 0.
+                estimator_loss_terms = num_terms * loss_t
+
+            assert kl_prior.size() == estimator_loss_terms.size()
+            assert kl_prior.size() == neg_log_constants.size()
+
+            loss = kl_prior + estimator_loss_terms + neg_log_constants
+
+        assert len(loss.shape) == 1, f'{loss.shape} has more than only batch dim.'
+
+        return loss, {'t': t_int.squeeze(), 'loss_t': loss.squeeze(),
+                      'error': error.squeeze()}
+
+    def get_adj_matrix(self, n_nodes, batch_size):
+        # 对每个n_nodes，batch_size只要算一次
+        if n_nodes in self._edges_dict:
+            edges_dic_b = self._edges_dict[n_nodes]
+            if batch_size in edges_dic_b:
+                return edges_dic_b[batch_size]
+            else:
+                # get edges for a single sample
+                rows, cols = [], []
+                for batch_idx in range(batch_size):
+                    for i in range(n_nodes):
+                        for j in range(n_nodes):
+                            rows.append(i + batch_idx * n_nodes)
+                            cols.append(j + batch_idx * n_nodes)
+                edges = [torch.LongTensor(rows).to(self.device),
+                         torch.LongTensor(cols).to(self.device)]
+                edges_dic_b[batch_size] = edges
+                return edges
+        else:
+            self._edges_dict[n_nodes] = {}
+            return self.get_adj_matrix(n_nodes, batch_size)

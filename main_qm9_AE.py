@@ -1,4 +1,6 @@
 # Rdkit import should be first, do not move it
+from AutoEncoder.AutoEncoder import HyperbolicAE
+
 try:
     from rdkit import Chem  #检测生成的分子性质有用
 except ModuleNotFoundError:
@@ -18,14 +20,14 @@ import torch
 import time
 import pickle
 from qm9.utils import prepare_context, compute_mean_mad
-from train_test import train_epoch, test, analyze_and_save
+from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='debug_10')
+parser.add_argument('--exp_name', type=str, default='AE_Diffusion')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
-parser.add_argument('--probabilistic_model', type=str, default='diffusion',
+parser.add_argument('--probabilistic_model', type=str, default='hyperbolic_diffusion',
                     help='diffusion')
 
 # Training complexity is O(1) (unaffected), but sampling complexity is O(steps).
@@ -61,6 +63,8 @@ parser.add_argument('--inv_sublayers', type=int, default=1,
                     help='number of layers')
 parser.add_argument('--nf', type=int, default=128,
                     help='dim of EGNN hidden feature')
+parser.add_argument('--dim', type=int, default=20,
+                    help='dim of encoder output')
 parser.add_argument('--tanh', type=eval, default=True,
                     help='use tanh in the coord_mlp')
 parser.add_argument('--attention', type=eval, default=True,
@@ -196,8 +200,17 @@ else:
 args.context_node_nf = context_node_nf
 
 
+AE_state_dict = torch.load('AutoEncoder/outputs/AutoEncoder/AE.npy')
+with open('AutoEncoder/outputs/AutoEncoder/args.pickle', 'rb') as f:
+    AE_args = pickle.load(f)
+AutoEncoder = HyperbolicAE(AE_args)
+AutoEncoder.load_state_dict(AE_state_dict)
+Encoder = AutoEncoder.encoder
+Decoder = AutoEncoder.decoder
+
+
 # Create EGNN flow
-model, nodes_dist, prop_dist = get_model(args, device, dataset_info, dataloaders['train'])  # model=EnVariationalDiffusion 包含EGNN_dynamics_QM9
+model, nodes_dist, prop_dist = get_model(args, device, dataset_info, dataloaders['train'],encoder=Encoder,decoder=Decoder)  # model=EnVariationalDiffusion 包含EGNN_dynamics_QM9
 if prop_dist is not None:
     prop_dist.set_normalizer(property_norms)
 model = model.to(device)
@@ -248,7 +261,7 @@ def main():
     best_nll_test = 1e8
     for epoch in range(args.start_epoch, args.n_epochs):
         start_epoch = time.time()
-        train_epoch(args=args, loader=dataloaders['train'], epoch=epoch, model=model, model_dp=model_dp,
+        train_HyperbolicDiffusion_epoch(args=args, loader=dataloaders['train'], epoch=epoch, model=model, model_dp=model_dp,
                     model_ema=model_ema, ema=ema, device=device, dtype=dtype, property_norms=property_norms,
                     nodes_dist=nodes_dist, dataset_info=dataset_info,
                     gradnorm_queue=gradnorm_queue, optim=optim, prop_dist=prop_dist)
@@ -265,13 +278,13 @@ def main():
             nll_val = test(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema_dp,
                            partition='Val', device=device, dtype=dtype, nodes_dist=nodes_dist,
                            property_norms=property_norms)
-            nll_test = test(args=args, loader=dataloaders['test'], epoch=epoch, eval_model=model_ema_dp,
-                            partition='Test', device=device, dtype=dtype,
-                            nodes_dist=nodes_dist, property_norms=property_norms)
+            # nll_test = test(args=args, loader=dataloaders['test'], epoch=epoch, eval_model=model_ema_dp,
+            #                 partition='Test', device=device, dtype=dtype,
+            #                 nodes_dist=nodes_dist, property_norms=property_norms)
 
             if nll_val < best_nll_val:
                 best_nll_val = nll_val
-                best_nll_test = nll_test
+                # best_nll_test = nll_test
                 if args.save_model:
                     args.current_epoch = epoch + 1
                     utils.save_model(optim, 'outputs/%s/optim.npy' % args.exp_name)
@@ -288,10 +301,10 @@ def main():
                         utils.save_model(model_ema, 'outputs/%s/generative_model_ema_%d.npy' % (args.exp_name, epoch))
                     with open('outputs/%s/args_%d.pickle' % (args.exp_name, epoch), 'wb') as f:
                         pickle.dump(args, f)
-            print('Val loss: %.4f \t Test loss:  %.4f' % (nll_val, nll_test))
+            print('Val loss: %.4f :  %.4f' % (nll_val))
             print('Best val loss: %.4f \t Best test loss:  %.4f' % (best_nll_val, best_nll_test))
             wandb.log({"Val loss ": nll_val}, commit=True)
-            wandb.log({"Test loss ": nll_test}, commit=True)
+            # wandb.log({"Test loss ": nll_test}, commit=True)
             wandb.log({"Best cross-validated test loss ": best_nll_test}, commit=True)
 
 

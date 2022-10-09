@@ -4,12 +4,15 @@ from torch.distributions.categorical import Categorical
 import numpy as np
 from egnn.models import EGNN_dynamics_QM9
 
-from equivariant_diffusion.en_diffusion import EnVariationalDiffusion
+from equivariant_diffusion.en_diffusion import EnVariationalDiffusion, HyperbolicEnVariationalDiffusion
 
 
-def get_model(args, device, dataset_info, dataloader_train):
+def get_model(args, device, dataset_info, dataloader_train,encoder = None,decoder = None):
     histogram = dataset_info['n_nodes']
-    in_node_nf = len(dataset_info['atom_decoder']) + int(args.include_charges)
+    if args.probabilistic_model == 'diffusion':
+        in_node_nf = len(dataset_info['atom_decoder']) + int(args.include_charges)
+    elif args.probabilistic_model == 'hyperbolic_diffusion':
+        in_node_nf = args.dim
     nodes_dist = DistributionNodes(histogram)
 
     prop_dist = None
@@ -44,7 +47,23 @@ def get_model(args, device, dataset_info, dataloader_train):
             )
 
         return vdm, nodes_dist, prop_dist
+    elif args.probabilistic_model == 'hyperbolic_diffusion':
+        hgdm = HyperbolicEnVariationalDiffusion(
+            encoder,
+            decoder,
+            dynamics=net_dynamics,
+            in_node_nf=in_node_nf,
+            n_dims=3,
+            timesteps=args.diffusion_steps,
+            noise_schedule=args.diffusion_noise_schedule,
+            noise_precision=args.diffusion_noise_precision,
+            loss_type=args.diffusion_loss_type,
+            norm_values=args.normalize_factors,
+            include_charges=args.include_charges,
+            device = device
+        )
 
+        return hgdm, nodes_dist, prop_dist
     else:
         raise ValueError(args.probabilistic_model)
 
