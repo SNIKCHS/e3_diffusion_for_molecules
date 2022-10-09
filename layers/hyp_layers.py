@@ -94,6 +94,7 @@ class HypLinear(nn.Module):
         self.use_bias = use_bias
         self.bias = nn.Parameter(torch.Tensor(1, out_features))
         self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.ln = nn.LayerNorm(in_features)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -103,6 +104,7 @@ class HypLinear(nn.Module):
     def forward(self, x):
         drop_weight = F.dropout(self.weight, self.dropout, training=self.training)
         mv = self.manifold.mobius_matvec(drop_weight, x, self.c)  # x先log到切空间与drop_weight相乘再exp到manifold
+        mv = self.ln(mv)
         res = self.manifold.proj(mv, self.c)
 
         if self.use_bias:
@@ -157,7 +159,7 @@ class HypAgg(Module):
             nn.Linear(in_features, in_features))
 
     def forward(self, x, distances, edges, node_mask, edge_mask):
-        x = torch.clamp(x, min=-1e3, max=1e3)  # 需要clamp 否则初期数值过大
+        x = torch.clamp(x, min=-1e4, max=1e4)  # 需要clamp 否则初期数值过大
         x_tangent = self.manifold.logmap0(x, c=self.c)  # (b*n_node,dim)
 
         row, col = edges
