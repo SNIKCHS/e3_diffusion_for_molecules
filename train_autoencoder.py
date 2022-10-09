@@ -30,17 +30,17 @@ parser.add_argument('--ode_regularization', type=float, default=1e-2)
 parser.add_argument('--bias', type=int, default=1)
 parser.add_argument('--max_z', type=int, default=6)
 parser.add_argument('--device', type=str, default='cuda')
-parser.add_argument('--model', type=str, default='GCN',
+parser.add_argument('--model', type=str, default='HNN',
                     help='MLP,HNN,GCN,HGCN')
-parser.add_argument('--manifold', type=str, default='Euclidean',
+parser.add_argument('--manifold', type=str, default='Hyperboloid',
                     help='Euclidean, Hyperboloid, PoincareBall')
 parser.add_argument('--c', type=float, default=None)
 parser.add_argument('--act', type=str, default='relu',
-                    help='relu,silu,selu')
+                    help='relu,silu,selu,leaky_relu')
 parser.add_argument('--local_agg', type=int, default=1)
 parser.add_argument('--encdec_share_curvature', type=eval, default=False,
                     help='True | False')
-# Epoch: 1 Best val loss: 10.9893 Epoch: 2, iter: 0/391, Loss 0.1327
+
 parser.add_argument('--brute_force', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--actnorm', type=eval, default=True,

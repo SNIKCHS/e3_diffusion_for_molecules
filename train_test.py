@@ -80,10 +80,11 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         if args.ema_decay > 0:
             ema.update_model_average(model_ema, model)
 
-        if torch.isnan(loss):
-            # for name,p in model.named_parameters():
-            #     print(name,p.grad)
-            exit(0)
+        # assert torch.isnan(loss)
+        # if torch.isnan(loss):
+        #     for name,p in model.named_parameters():
+        #         print(name,p.grad)
+        #     exit(0)
 
         if i % args.n_report_steps == 0:
             print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "

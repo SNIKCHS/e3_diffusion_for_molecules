@@ -156,7 +156,9 @@ class HypAgg(Module):
             nn.Linear(in_features, in_features))
 
     def forward(self, x, distances, edges, node_mask, edge_mask):
+        # x = torch.clamp(x, min=-1e3, max=1e3)
         x_tangent = self.manifold.logmap0(x, c=self.c)  # (b*n_node,dim)
+
         row, col = edges
 
         if self.local_agg:
