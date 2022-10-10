@@ -44,9 +44,10 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         optim.zero_grad()
 
         # transform batch through flow
-        nll = model(x, h, node_mask, edge_mask)
+        nodeloss,edgeloss = model(x, h, node_mask, edge_mask)
         reg_term = torch.tensor(0)
         # standard nll from forward KL
+        nll = nodeloss+edgeloss
         loss = nll + args.ode_regularization * reg_term
 
         loss.backward()
@@ -76,7 +77,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
 
         if i % args.n_report_steps == 0:
             print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
-                  f"Loss {loss.item():.4f}, NLL: {nll.item():.4f}, "
+                  f"Loss {loss.item():.4f}, node_pred_loss: {nodeloss.item():.4f}, edge_pred_loss: {edgeloss.item():.4f}, "
                   f"RegTerm: {reg_term.item():.1f}, "
                   f"GradNorm: {grad_norm:.1f}")
         nll_epoch.append(nll.item())
@@ -284,7 +285,9 @@ def test_AE(args, loader, epoch, eval_model, device, dtype, property_norms, part
                 context = None
 
             # transform batch through flow
-            nll = eval_model(x, h, node_mask, edge_mask)
+            nodeloss, edgeloss = eval_model(x, h, node_mask, edge_mask)
+            # standard nll from forward KL
+            nll = nodeloss + edgeloss
             # standard nll from forward KL
 
             nll_epoch += nll.item() * batch_size

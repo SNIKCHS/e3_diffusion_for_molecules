@@ -18,12 +18,14 @@ class DenseAtt(nn.Module):
         self.linear = nn.Sequential(
             nn.Linear(2 * in_features+1, 2 * in_features, bias=True),
             nn.SiLU(),
+            nn.Dropout(self.dropout),
             nn.Linear(2 * in_features, in_features, bias=True),
             nn.SiLU(),
         )
         self.att_mlp = nn.Sequential(
             nn.Linear(in_features, 1),
-            nn.Sigmoid())
+            nn.Sigmoid()
+        )
         self.h_gauss = nn.Parameter(torch.Tensor(1))
         self.in_features = in_features
 

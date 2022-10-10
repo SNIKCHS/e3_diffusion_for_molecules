@@ -3,6 +3,8 @@ import torch.nn as nn
 import layers.hyp_layers as hyp_layers
 import torch.nn.functional as F
 import torch
+
+from layers.att_layers import DenseAtt
 from layers.layers import GraphConvolution, Linear, get_dim_act
 
 
@@ -18,6 +20,7 @@ class Decoder(nn.Module):
             nn.Linear(args.dim,args.max_z),
             # nn.Sigmoid()
         )
+        self.link_net = DenseAtt(args.dim,args.dropout)
 
     def decode(self, h, distances, edges, node_mask, edge_mask):
 
@@ -30,10 +33,11 @@ class Decoder(nn.Module):
         # if self.c is not None:
         #     output = self.manifold.logmap0(output, self.curvatures[-1])
         #     output = self.manifold.proj_tan0(output,  self.curvatures[-1])
+        row, col = edges
+        edge_pred = self.link_net(output[row], output[col], distances, edge_mask)  # (b*atom*atom,1)
 
         output = self.out(output)
-
-        return output
+        return output,edge_pred
 
 
 class GCNDecoder(Decoder):

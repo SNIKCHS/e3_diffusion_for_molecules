@@ -25,22 +25,26 @@ class HyperbolicAE(nn.Module):
         edges = self.get_adj_matrix(n_nodes,batch_size)  # [rows, cols] rows=cols=(batch_size*n_nodes*n_nodes) value in [0,batch_size*n_nodes)
         h, distances, edges, node_mask, edge_mask = self.encoder(x, categories, charges, edges, node_mask, edge_mask)
         # print(h[0])
-        output = self.decoder.decode(h, distances, edges, node_mask, edge_mask)
+        output,edge_pred = self.decoder.decode(h, distances, edges, node_mask, edge_mask)
 
-        return self.compute_loss(categories, output)
+        return self.compute_loss(categories, output,distances,edge_pred)
 
-    def compute_loss(self, x, x_hat):
+    def compute_loss(self, x, x_hat,edge,edge_hat):
         """
         auto-encoder的损失
         :param x: encoder的输入 原子类别（0~5）
         :param x_hat: decoder的输出 (b*n_nodes,6)
         :return: loss
         """
-        b = x.size(0)
+        b,n_atom = x.size()
+
         n_type = x_hat.size(-1)
         atom_loss_f = nn.CrossEntropyLoss(reduction='sum')
-        loss = atom_loss_f(x_hat.view(-1, n_type), x.view(-1))/b
-        return loss
+        loss0 = atom_loss_f(x_hat.view(-1, n_type), x.view(-1))/b
+
+        edge_loss_f = nn.MSELoss(reduction='sum')
+        loss1 = torch.sqrt(edge_loss_f(edge_hat,edge))/(b)
+        return loss0,loss1
 
     def get_adj_matrix(self, n_nodes, batch_size):
         # 对每个n_nodes，batch_size只要算一次
