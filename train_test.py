@@ -57,7 +57,11 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
             grad_norm = 0.
 
         optim.step()
-
+        if i%50==0:
+            curvatures = list(model.get_submodule('encoder.curvatures'))
+            print('encoder:',curvatures)
+            curvatures = list(model.get_submodule('decoder.curvatures'))
+            print('decoder:',curvatures)
         if args.model not in ['MLP','GCN'] and args.c is None:
             en_curvatures = model.get_submodule('encoder.curvatures')
             for p in en_curvatures.parameters():
@@ -280,7 +284,7 @@ def test_AE(args, loader, epoch, eval_model, device, dtype, property_norms, part
                 context = None
 
             # transform batch through flow
-            nll, _ = eval_model(x, h, node_mask, edge_mask)
+            nll = eval_model(x, h, node_mask, edge_mask)
             # standard nll from forward KL
 
             nll_epoch += nll.item() * batch_size
