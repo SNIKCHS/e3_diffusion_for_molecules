@@ -28,7 +28,7 @@ parser.add_argument('--dim', type=int, default=20)
 parser.add_argument('--num_layers', type=int, default=4)
 parser.add_argument('--ode_regularization', type=float, default=1e-3)
 parser.add_argument('--bias', type=int, default=1)
-parser.add_argument('--max_z', type=int, default=6)
+parser.add_argument('--max_z', type=int, default=6)  # pad+5 types
 parser.add_argument('--device', type=str, default='cuda')
 parser.add_argument('--model', type=str, default='HGCN',
                     help='MLP,HNN,GCN,HGCN')

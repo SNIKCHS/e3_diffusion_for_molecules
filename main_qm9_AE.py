@@ -31,7 +31,7 @@ parser.add_argument('--probabilistic_model', type=str, default='hyperbolic_diffu
                     help='diffusion')
 
 # Training complexity is O(1) (unaffected), but sampling complexity is O(steps).
-parser.add_argument('--diffusion_steps', type=int, default=500)
+parser.add_argument('--diffusion_steps', type=int, default=1000)
 parser.add_argument('--diffusion_noise_schedule', type=str, default='polynomial_2',
                     help='learned, cosine')
 parser.add_argument('--diffusion_noise_precision', type=float, default=1e-5,
@@ -85,7 +85,7 @@ parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
 parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
+parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')

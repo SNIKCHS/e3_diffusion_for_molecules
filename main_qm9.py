@@ -29,7 +29,7 @@ parser.add_argument('--probabilistic_model', type=str, default='diffusion',
                     help='diffusion')
 
 # Training complexity is O(1) (unaffected), but sampling complexity is O(steps).
-parser.add_argument('--diffusion_steps', type=int, default=500)
+parser.add_argument('--diffusion_steps', type=int, default=1000)
 parser.add_argument('--diffusion_noise_schedule', type=str, default='polynomial_2',
                     help='learned, cosine')
 parser.add_argument('--diffusion_noise_precision', type=float, default=1e-5,

@@ -7,7 +7,7 @@ from egnn.models import EGNN_dynamics_QM9
 from equivariant_diffusion.en_diffusion import EnVariationalDiffusion, HyperbolicEnVariationalDiffusion
 
 
-def get_model(args, device, dataset_info, dataloader_train,encoder = None,decoder = None):
+def get_model(args, device, dataset_info, dataloader_train, encoder=None, decoder=None):
     histogram = dataset_info['n_nodes']
     if args.probabilistic_model == 'diffusion':
         in_node_nf = len(dataset_info['atom_decoder']) + int(args.include_charges)
@@ -43,8 +43,9 @@ def get_model(args, device, dataset_info, dataloader_train,encoder = None,decode
             noise_precision=args.diffusion_noise_precision,
             loss_type=args.diffusion_loss_type,
             norm_values=args.normalize_factors,
-            include_charges=args.include_charges
-            )
+            include_charges=args.include_charges,
+            num_classes=len(dataset_info['atom_decoder'])
+        )
 
         return vdm, nodes_dist, prop_dist
     elif args.probabilistic_model == 'hyperbolic_diffusion':
@@ -60,7 +61,8 @@ def get_model(args, device, dataset_info, dataloader_train,encoder = None,decode
             loss_type=args.diffusion_loss_type,
             norm_values=args.normalize_factors,
             include_charges=args.include_charges,
-            device = device
+            device=device,
+            num_classes=len(dataset_info['atom_decoder'])
         )
 
         return hgdm, nodes_dist, prop_dist
@@ -79,7 +81,6 @@ def get_optim(args, generative_model):
 
 class DistributionNodes:
     def __init__(self, histogram):
-
         self.n_nodes = []
         prob = []
         self.keys = {}
@@ -89,7 +90,7 @@ class DistributionNodes:
             prob.append(histogram[nodes])
         self.n_nodes = torch.tensor(self.n_nodes)
         prob = np.array(prob)
-        prob = prob/np.sum(prob)
+        prob = prob / np.sum(prob)
 
         self.prob = torch.from_numpy(prob).float()
 
@@ -143,12 +144,12 @@ class DistributionProperty:
                 distribution[n_nodes] = {'probs': probs, 'params': params}
 
     def _create_prob_given_nodes(self, values):
-        n_bins = self.num_bins #min(self.num_bins, len(values))
+        n_bins = self.num_bins  # min(self.num_bins, len(values))
         prop_min, prop_max = torch.min(values), torch.max(values)
         prop_range = prop_max - prop_min + 1e-12
         histogram = torch.zeros(n_bins)
         for val in values:
-            i = int((val - prop_min)/prop_range * n_bins)
+            i = int((val - prop_min) / prop_range * n_bins)
             # Because of numerical precision, one sample can fall in bin int(n_bins) instead of int(n_bins-1)
             # We move it to bin int(n_bind-1 if tat happens)
             if i == n_bins:

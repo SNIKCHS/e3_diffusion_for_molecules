@@ -261,7 +261,7 @@ class EnVariationalDiffusion(torch.nn.Module):
             dynamics: models.EGNN_dynamics_QM9, in_node_nf: int, n_dims: int,
             timesteps: int = 1000, parametrization='eps', noise_schedule='learned',
             noise_precision=1e-4, loss_type='vlb', norm_values=(1., 1., 1.),
-            norm_biases=(None, 0., 0.), include_charges=True):
+            norm_biases=(None, 0., 0.), include_charges=True, num_classes=5):
         super().__init__()
 
         assert loss_type in {'vlb', 'l2'}
@@ -285,7 +285,7 @@ class EnVariationalDiffusion(torch.nn.Module):
 
         self.in_node_nf = in_node_nf
         self.n_dims = n_dims
-        self.num_classes = self.in_node_nf - self.include_charges
+        self.num_classes = num_classes
 
         self.T = timesteps
         self.parametrization = parametrization
@@ -312,8 +312,8 @@ class EnVariationalDiffusion(torch.nn.Module):
                 f'large with sigma_0 {sigma_0:.5f} and '
                 f'1 / norm_value = {1. / max_norm_value}')
 
-    def phi(self, x, t, node_mask, edge_mask, context, edge = None):
-        net_out = self.dynamics._forward(t, x, node_mask, edge_mask, context,edge)
+    def phi(self, x, t, node_mask, edge_mask, context, edge=None):
+        net_out = self.dynamics._forward(t, x, node_mask, edge_mask, context, edge)
 
         return net_out
 
@@ -879,14 +879,16 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             dynamics: models.EGNN_dynamics_QM9, in_node_nf: int, n_dims: int,
             timesteps: int = 1000, parametrization='eps', noise_schedule='learned',
             noise_precision=1e-4, loss_type='vlb', norm_values=(1., 1., 1.),
-            norm_biases=(None, 0., 0.), include_charges=True,device='cuda'
+            norm_biases=(None, 0., 0.), include_charges=True, device='cuda', num_classes=5
     ):
         super().__init__(dynamics, in_node_nf, n_dims, timesteps, parametrization, noise_schedule,
-                         noise_precision, loss_type, norm_values, norm_biases, include_charges)
+                         noise_precision, loss_type, norm_values, norm_biases, include_charges, num_classes)
         self.Encoder = Encoder
         self.Decoder = Decoder
         self._edges_dict = {}
         self.device = device
+        # self.atom_charge_dict = {'H': 1, 'C': 6, 'N': 7, 'O': 8, 'F': 9}
+        self.atom_decoder = torch.tensor([1, 6, 7, 8, 9], device=self.device)
 
     def forward(self, x, h, node_mask=None, edge_mask=None, context=None):
         """
@@ -898,17 +900,17 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         batch_size, n_nodes = categories.shape
         edges = self.get_adj_matrix(n_nodes, batch_size)
         h, distances, edges, _, _ = self.Encoder(x, categories, charges, edges, node_mask, edge_mask)
-        h = h.view(batch_size,n_nodes,-1)
+        h = h.view(batch_size, n_nodes, -1)
         # Reset delta_log_px if not vlb objective.
         if self.training and self.loss_type == 'l2':
             delta_log_px = torch.zeros_like(delta_log_px)
 
         if self.training:
             # Only 1 forward pass when t0_always is False.
-            loss, loss_dict = self.compute_loss(x, h, node_mask, edge_mask, context, t0_always=False,edge=edges)
+            loss, loss_dict = self.compute_loss(x, h, node_mask, edge_mask, context, t0_always=False, edge=edges)
         else:
             # Less variance in the estimator, costs two forward passes.
-            loss, loss_dict = self.compute_loss(x, h, node_mask, edge_mask, context, t0_always=True,edge=edges)
+            loss, loss_dict = self.compute_loss(x, h, node_mask, edge_mask, context, t0_always=True, edge=edges)
 
         neg_log_pxh = loss
 
@@ -918,7 +920,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         return neg_log_pxh
 
-    def compute_loss(self, x, h, node_mask, edge_mask, context, t0_always,edge = None):
+    def compute_loss(self, x, h, node_mask, edge_mask, context, t0_always, edge=None):
         """
         主要计算部分
         Parameters
@@ -977,7 +979,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         diffusion_utils.assert_mean_zero_with_mask(z_t[:, :, :self.n_dims], node_mask)
 
         # Neural net prediction. 拟合噪声
-        net_out = self.phi(z_t, t, node_mask, edge_mask, context,edge)
+        net_out = self.phi(z_t, t, node_mask, edge_mask, context, edge)
 
         # Compute the error.
         error = self.compute_error(net_out, gamma_t, eps)
@@ -1018,7 +1020,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
                 n_samples=x.size(0), n_nodes=x.size(1), node_mask=node_mask)
             z_0 = alpha_0 * xh + sigma_0 * eps_0
 
-            net_out = self.phi(z_0, t_zeros, node_mask, edge_mask, context) # 预测噪声
+            net_out = self.phi(z_0, t_zeros, node_mask, edge_mask, context)  # 预测噪声
 
             # loss_term_0 = -self.log_pxh_given_z0_without_constants(
             #     x, h, z_0, gamma_0, eps_0, net_out, node_mask)
@@ -1057,6 +1059,155 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         return loss, {'t': t_int.squeeze(), 'loss_t': loss.squeeze(),
                       'error': error.squeeze()}
 
+    def sample_p_zs_given_zt(self, s, t, zt, node_mask, edge_mask, context, fix_noise=False):
+        """Samples from zs ~ p(zs | zt). Only used during sampling."""
+        gamma_s = self.gamma(s)
+        gamma_t = self.gamma(t)
+
+        sigma2_t_given_s, sigma_t_given_s, alpha_t_given_s = \
+            self.sigma_and_alpha_t_given_s(gamma_t, gamma_s, zt)
+
+        sigma_s = self.sigma(gamma_s, target_tensor=zt)
+        sigma_t = self.sigma(gamma_t, target_tensor=zt)
+
+        # Neural net prediction.
+        eps_t = self.phi(zt, t, node_mask, edge_mask, context)
+
+        # Compute mu for p(zs | zt).
+        diffusion_utils.assert_mean_zero_with_mask(zt[:, :, :self.n_dims], node_mask)
+        diffusion_utils.assert_mean_zero_with_mask(eps_t[:, :, :self.n_dims], node_mask)
+        mu = zt / alpha_t_given_s - (sigma2_t_given_s / alpha_t_given_s / sigma_t) * eps_t
+
+        # Compute sigma for p(zs | zt).
+        sigma = sigma_t_given_s * sigma_s / sigma_t
+
+        # Sample zs given the paramters derived from zt.
+        zs = self.sample_normal(mu, sigma, node_mask, fix_noise)
+
+        zs_to_loop = torch.cat(
+            [diffusion_utils.remove_mean_with_mask(zs[:, :, :self.n_dims],
+                                                   node_mask),
+             zs[:, :, self.n_dims:]], dim=2
+        )
+
+
+        # Project down to avoid numerical runaway of the center of gravity.
+        x = diffusion_utils.remove_mean_with_mask(zs[:, :, :self.n_dims], node_mask)
+        h = zs[:, :, self.n_dims:]
+        h = self.decode(x, h, node_mask, edge_mask)
+        zs = torch.cat([x,h['categorical'], h['integer']], dim=2)
+
+
+        return zs,zs_to_loop
+
+    def sample_p_xh_given_z0(self, z0, node_mask, edge_mask, context, fix_noise=False):
+        """Samples x ~ p(x|z0)."""
+        zeros = torch.zeros(size=(z0.size(0), 1), device=z0.device)
+        gamma_0 = self.gamma(zeros)
+        # Computes sqrt(sigma_0^2 / alpha_0^2)
+        sigma_x = self.SNR(-0.5 * gamma_0).unsqueeze(1)
+        net_out = self.phi(z0, zeros, node_mask, edge_mask, context)
+
+        # Compute mu for p(zs | zt).
+        mu_x = self.compute_x_pred(net_out, z0, gamma_0)
+        xh = self.sample_normal(mu=mu_x, sigma=sigma_x, node_mask=node_mask, fix_noise=fix_noise)
+
+        x = xh[:, :, :self.n_dims] * node_mask
+        h = xh[:, :, self.n_dims:]
+
+        h = self.decode(x, h, node_mask, edge_mask)
+
+        return x, h
+
+    def sample(self, n_samples, n_nodes, node_mask, edge_mask, context, fix_noise=False):
+        """
+        Draw samples from the generative model.
+        """
+        if fix_noise:
+            # Noise is broadcasted over the batch axis, useful for visualizations.
+            z = self.sample_combined_position_feature_noise(1, n_nodes, node_mask)
+        else:
+            z = self.sample_combined_position_feature_noise(n_samples, n_nodes, node_mask)
+
+        diffusion_utils.assert_mean_zero_with_mask(z[:, :, :self.n_dims], node_mask)
+
+        # Iteratively sample p(z_s | z_t) for t = 1, ..., T, with s = t - 1.
+        for s in reversed(range(0, self.T)):
+            s_array = torch.full((n_samples, 1), fill_value=s, device=z.device)
+            t_array = s_array + 1
+            s_array = s_array / self.T
+            t_array = t_array / self.T
+            print(z.shape)
+            z_chain,z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context, fix_noise=fix_noise)
+            print(z.shape)
+
+        # Finally sample p(x, h | z_0).
+        x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context, fix_noise=fix_noise)
+
+        max_cog = torch.sum(x, dim=1, keepdim=True).abs().max().item()
+        if max_cog > 5e-2:
+            print(f'Warning cog drift with error {max_cog:.3f}. Projecting '
+                  f'the positions down.')
+            x = diffusion_utils.remove_mean_with_mask(x, node_mask)
+
+        return x, h
+
+    def decode(self, x, h, node_mask, edge_mask):
+        batch_size, n_nodes, dim = h.size()
+        edges = self.get_adj_matrix(n_nodes, batch_size)
+        distances, _ = coord2diff(x.view(batch_size * n_nodes, -1), edges)
+        h_pred = self.Decoder.decode(h.view(-1, dim), distances, edges, node_mask, edge_mask).view(batch_size, n_nodes,
+                                                                                                   -1)  # (b,n_nodes,max_z)  # max_z = 1 padding+5 types
+
+        # torch.argmax(h_pred, dim=2) 0~5 -1 ->-1~4 mask ->0~4
+        argmax = torch.argmax(h_pred, dim=2, keepdim=True)
+        idx = ((argmax - 1) * node_mask).long() * argmax.bool()
+
+        h = F.one_hot(idx.squeeze(), self.num_classes) * node_mask
+        charge = torch.gather(self.atom_decoder.view(1, 1, -1).repeat(batch_size, n_nodes, 1), 2, idx)
+        charge = charge * node_mask
+        # print(x.shape, charge.shape, h.shape)
+        h = {'integer': charge.long(), 'categorical': h}
+
+        return h
+
+    def sample_chain(self, n_samples, n_nodes, node_mask, edge_mask, context, keep_frames=None, outdim=9):
+        """
+        Draw samples from the generative model, keep the intermediate states for visualization purposes.
+        """
+        z = self.sample_combined_position_feature_noise(n_samples, n_nodes, node_mask) # (b,n_nodes,dim)
+
+        diffusion_utils.assert_mean_zero_with_mask(z[:, :, :self.n_dims], node_mask)
+
+        if keep_frames is None:
+            keep_frames = self.T
+        else:
+            assert keep_frames <= self.T
+        chain = torch.zeros((keep_frames, z.size(0), z.size(1), outdim), device=z.device)
+
+        # Iteratively sample p(z_s | z_t) for t = 1, ..., T, with s = t - 1.
+        for s in reversed(range(0, self.T)):
+            s_array = torch.full((n_samples, 1), fill_value=s, device=z.device)
+            t_array = s_array + 1
+            s_array = s_array / self.T
+            t_array = t_array / self.T
+
+            z_chain,z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context)
+
+            # Write to chain tensor.
+            write_index = (s * keep_frames) // self.T
+            chain[write_index] = z_chain * node_mask
+
+        # Finally sample p(x, h | z_0).
+        x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context)
+
+        xh = torch.cat([x, h['categorical'], h['integer']], dim=2)
+
+        chain[0] = xh  # Overwrite last frame with the resulting x and h.
+        chain_flat = chain.view(n_samples * keep_frames, z.size(1),outdim)
+
+        return chain_flat
+
     def get_adj_matrix(self, n_nodes, batch_size):
         # 对每个n_nodes，batch_size只要算一次
         if n_nodes in self._edges_dict:
@@ -1078,3 +1229,12 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         else:
             self._edges_dict[n_nodes] = {}
             return self.get_adj_matrix(n_nodes, batch_size)
+
+
+def coord2diff(x, edge_index, norm_constant=1):
+    row, col = edge_index
+    coord_diff = x[row] - x[col]
+    radial = torch.sum((coord_diff) ** 2, 1).unsqueeze(1)
+    norm = torch.sqrt(radial + 1e-8)
+    coord_diff = coord_diff / (norm + norm_constant)
+    return radial, coord_diff
