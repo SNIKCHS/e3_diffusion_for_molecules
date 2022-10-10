@@ -290,6 +290,53 @@ def test_AE(args, loader, epoch, eval_model, device, dtype, property_norms, part
 
     return nll_epoch / n_samples
 
+def test_HyperbolicDiffusion(args, loader, epoch, eval_model, device, dtype, property_norms, nodes_dist, partition='Test'):
+    eval_model.eval()
+    with torch.no_grad():
+        nll_epoch = 0
+        n_samples = 0
+
+        n_iterations = len(loader)
+
+        for i, data in enumerate(loader):
+            x = data['positions'].to(device, dtype)
+            batch_size = x.size(0)
+            node_mask = data['atom_mask'].to(device, dtype).unsqueeze(2)
+            edge_mask = data['edge_mask'].to(device, dtype)
+            one_hot = data['one_hot'].to(device, dtype)
+            charges = (data['charges'] if args.include_charges else torch.zeros(0)).to(device, dtype)
+            categories = (torch.argmax(one_hot.int(), dim=2) + 1) * node_mask.squeeze()  # (b,n_nodes) o为padding，1~5
+            h = (categories.long(), charges)
+
+            if args.augment_noise > 0:
+                # Add noise eps ~ N(0, augment_noise) around points.
+                eps = sample_center_gravity_zero_gaussian_with_mask(x.size(),
+                                                                    x.device,
+                                                                    node_mask)
+                x = x + eps * args.augment_noise
+
+            x = remove_mean_with_mask(x, node_mask)
+            check_mask_correct([x, one_hot, charges], node_mask)
+            assert_mean_zero_with_mask(x, node_mask)
+
+            if len(args.conditioning) > 0:
+                context = qm9utils.prepare_context(args.conditioning, data, property_norms).to(device, dtype)
+                assert_correctly_masked(context, node_mask)
+            else:
+                context = None
+
+            # transform batch through flow
+            nll, _, _ = losses.compute_loss_and_nll(args, eval_model, nodes_dist, x, h,
+                                                    node_mask, edge_mask, context)
+            # standard nll from forward KL
+
+            nll_epoch += nll.item() * batch_size
+            n_samples += batch_size
+            if i % args.n_report_steps == 0:
+                print(f"\r {partition} NLL \t epoch: {epoch}, iter: {i}/{n_iterations}, "
+                      f"NLL: {nll_epoch / n_samples:.4f}")
+
+    return nll_epoch / n_samples
 
 def test(args, loader, epoch, eval_model, device, dtype, property_norms, nodes_dist, partition='Test'):
     eval_model.eval()
