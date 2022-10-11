@@ -207,6 +207,7 @@ class HypAct(Module):
         self.c_out = c_out
         self.act = act
 
+
     def forward(self, x):
         xt = self.act(self.manifold.logmap0(x, c=self.c_in))
         xt = self.manifold.proj_tan0(xt, c=self.c_out)

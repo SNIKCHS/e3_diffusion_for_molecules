@@ -15,7 +15,7 @@ import torch
 
 
 def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
-                   gradnorm_queue):
+                   gradnorm_queue,lr_scheduler):
     # torch.autograd.set_detect_anomaly(True)
     model_dp.train()
     model.train()
@@ -58,6 +58,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
             grad_norm = 0.
 
         optim.step()
+        lr_scheduler.step(loss)
         if i % 100 == 0:
             curvatures = list(model.get_submodule('encoder.curvatures'))
             print('encoder:', curvatures)
@@ -81,7 +82,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
                   f"RegTerm: {reg_term.item():.1f}, "
                   f"GradNorm: {grad_norm:.1f}")
         nll_epoch.append(nll.item())
-        wandb.log({"Batch NLL": nll.item()}, commit=True)
+        wandb.log({"Batch NLL": nll.item(),'node_loss': nodeloss.item(),'edge_pred_loss': edgeloss.item()}, commit=True)
         if args.break_train_epoch:
             break
     wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
@@ -288,15 +289,16 @@ def test_AE(args, loader, epoch, eval_model, device, dtype, property_norms, part
 
             # transform batch through flow
             nodeloss, edgeloss = eval_model(x, h, node_mask, edge_mask)
+            nodeloss, edgeloss = nodeloss.mean(), edgeloss.mean()
             # standard nll from forward KL
             nll = nodeloss + edgeloss
             # standard nll from forward KL
 
-            nll_epoch += nll.item() * batch_size
+            nll_epoch += nll * batch_size
             n_samples += batch_size
             if i % args.n_report_steps == 0:
                 print(f"\r {partition} NLL \t epoch: {epoch}, iter: {i}/{n_iterations}, "
-                      f"NLL: {nll.item():.2f} \t node_loss: {nodeloss.item():.6f} \t edgeloss: {edgeloss.item():.6f}")
+                      f"NLL: {nll.item():.6f} \t node_loss: {nodeloss.item():.6f} \t edgeloss: {edgeloss.item():.6f}")
 
     return nll_epoch / n_samples
 

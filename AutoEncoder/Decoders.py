@@ -22,6 +22,7 @@ class Decoder(nn.Module):
         )
         self.pred_edge = args.pred_edge
         self.link_net = DenseAtt(args.dim,args.dropout)
+        self.link_out = nn.Linear(args.dim,1)
 
     def decode(self, h, distances, edges, node_mask, edge_mask):
         if self.decode_adj:
@@ -38,6 +39,7 @@ class Decoder(nn.Module):
         if self.pred_edge:
             row, col = edges
             edge_pred = self.link_net(output[row], output[col], distances, edge_mask)  # (b*atom*atom,1)
+            edge_pred = self.link_out(edge_pred)
         else:
             edge_pred = None
 

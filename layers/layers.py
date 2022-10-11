@@ -107,10 +107,12 @@ class Linear(Module):
     def __init__(self, in_features, out_features, dropout, act, use_bias):
         super(Linear, self).__init__()
         self.dropout = dropout
+        self.ln = nn.LayerNorm(in_features)
         self.linear = nn.Linear(in_features, out_features, use_bias)
         self.act = act
 
     def forward(self, x):
+        x = self.ln(x)
         hidden = self.linear.forward(x)
         if self.dropout is not None:
             hidden = F.dropout(hidden, self.dropout, training=self.training)
