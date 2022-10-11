@@ -1156,7 +1156,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         batch_size, n_nodes, dim = h.size()
         edges = self.get_adj_matrix(n_nodes, batch_size)
         distances, _ = coord2diff(x.view(batch_size * n_nodes, -1), edges)
-        h_pred = self.Decoder.decode(h.view(-1, dim), distances, edges, node_mask, edge_mask).view(batch_size, n_nodes,
+        h_pred,_ = self.Decoder.decode(h.view(-1, dim), distances, edges, node_mask, edge_mask).view(batch_size, n_nodes,
                                                                                                    -1)  # (b,n_nodes,max_z)  # max_z = 1 padding+5 types
 
         # torch.argmax(h_pred, dim=2) 0~5 -1 ->-1~4 mask ->0~4

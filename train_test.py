@@ -44,10 +44,10 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         optim.zero_grad()
 
         # transform batch through flow
-        nodeloss,edgeloss = model(x, h, node_mask, edge_mask)
+        nodeloss, edgeloss = model(x, h, node_mask, edge_mask)
         reg_term = torch.tensor(0)
         # standard nll from forward KL
-        nll = nodeloss+edgeloss
+        nll = nodeloss + edgeloss
         loss = nll + args.ode_regularization * reg_term
 
         loss.backward()
@@ -58,12 +58,12 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
             grad_norm = 0.
 
         optim.step()
-        if i%50==0:
+        if i % 100 == 0:
             curvatures = list(model.get_submodule('encoder.curvatures'))
-            print('encoder:',curvatures)
+            print('encoder:', curvatures)
             curvatures = list(model.get_submodule('decoder.curvatures'))
-            print('decoder:',curvatures)
-        if args.model not in ['MLP','GCN'] and args.c is None:
+            print('decoder:', curvatures)
+        if args.model not in ['MLP', 'GCN'] and args.c is None:
             en_curvatures = model.get_submodule('encoder.curvatures')
             for p in en_curvatures.parameters():
                 p.data.clamp_(1e-8)
@@ -86,8 +86,10 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
             break
     wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
 
-def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
-                nodes_dist, gradnorm_queue, dataset_info, prop_dist):
+
+def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms,
+                                    optim,
+                                    nodes_dist, gradnorm_queue, dataset_info, prop_dist):
     model_dp.train()
     model.train()
     nll_epoch = []
@@ -115,7 +117,6 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
 
         check_mask_correct([x, one_hot, charges], node_mask)
         assert_mean_zero_with_mask(x, node_mask)
-
 
         if len(args.conditioning) > 0:
             context = qm9utils.prepare_context(args.conditioning, data, property_norms).to(device, dtype)
@@ -168,6 +169,7 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
         if args.break_train_epoch:
             break
     wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
+
 
 def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
                 nodes_dist, gradnorm_queue, dataset_info, prop_dist):
@@ -294,11 +296,13 @@ def test_AE(args, loader, epoch, eval_model, device, dtype, property_norms, part
             n_samples += batch_size
             if i % args.n_report_steps == 0:
                 print(f"\r {partition} NLL \t epoch: {epoch}, iter: {i}/{n_iterations}, "
-                      f"NLL: {nll.item():.2f}")
+                      f"NLL: {nll.item():.2f} \t node_loss: {nodeloss.item():.6f} \t edgeloss: {edgeloss.item():.6f}")
 
     return nll_epoch / n_samples
 
-def test_HyperbolicDiffusion(args, loader, epoch, eval_model, device, dtype, property_norms, nodes_dist, partition='Test'):
+
+def test_HyperbolicDiffusion(args, loader, epoch, eval_model, device, dtype, property_norms, nodes_dist,
+                             partition='Test'):
     eval_model.eval()
     with torch.no_grad():
         nll_epoch = 0
@@ -345,6 +349,7 @@ def test_HyperbolicDiffusion(args, loader, epoch, eval_model, device, dtype, pro
                       f"NLL: {nll_epoch / n_samples:.4f}")
 
     return nll_epoch / n_samples
+
 
 def test(args, loader, epoch, eval_model, device, dtype, property_norms, nodes_dist, partition='Test'):
     eval_model.eval()

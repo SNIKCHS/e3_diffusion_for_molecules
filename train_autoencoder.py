@@ -20,7 +20,7 @@ from train_test import train_AE_epoch, test_AE
 parser = argparse.ArgumentParser(description='E3Diffusion')
 parser.add_argument('--exp_name', type=str, default='AutoEncoder')
 
-parser.add_argument('--n_epochs', type=int, default=200)
+parser.add_argument('--n_epochs', type=int, default=2000)
 parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--lr', type=float, default=2e-4)
 parser.add_argument('--dropout', type=float, default=0.0)
@@ -38,6 +38,8 @@ parser.add_argument('--c', type=float, default=None)
 parser.add_argument('--act', type=str, default='selu',
                     help='relu,silu,selu,leaky_relu')
 parser.add_argument('--local_agg', type=int, default=1)
+parser.add_argument('--pred_edge', type=eval, default=True,
+                    help='True | False')
 parser.add_argument('--encdec_share_curvature', type=eval, default=False,
                     help='True | False')
 

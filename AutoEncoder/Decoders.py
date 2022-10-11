@@ -20,24 +20,28 @@ class Decoder(nn.Module):
             nn.Linear(args.dim,args.max_z),
             # nn.Sigmoid()
         )
+        self.pred_edge = args.pred_edge
         self.link_net = DenseAtt(args.dim,args.dropout)
 
     def decode(self, h, distances, edges, node_mask, edge_mask):
-
         if self.decode_adj:
             input = (h, distances, edges, node_mask, edge_mask)
             output, distances, edges, node_mask, edge_mask = self.decoder.forward(input)
         else:
             output = self.decoder.forward(h)
 
+        node_pred = self.out(output)
+
         # if self.c is not None:
         #     output = self.manifold.logmap0(output, self.curvatures[-1])
         #     output = self.manifold.proj_tan0(output,  self.curvatures[-1])
-        row, col = edges
-        edge_pred = self.link_net(output[row], output[col], distances, edge_mask)  # (b*atom*atom,1)
+        if self.pred_edge:
+            row, col = edges
+            edge_pred = self.link_net(output[row], output[col], distances, edge_mask)  # (b*atom*atom,1)
+        else:
+            edge_pred = None
 
-        output = self.out(output)
-        return output,edge_pred
+        return node_pred,edge_pred
 
 
 class GCNDecoder(Decoder):

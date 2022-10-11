@@ -102,9 +102,10 @@ class HypLinear(nn.Module):
         init.constant_(self.bias, 0)
 
     def forward(self, x):
+        x = self.ln(x)
         drop_weight = F.dropout(self.weight, self.dropout, training=self.training)
         mv = self.manifold.mobius_matvec(drop_weight, x, self.c)  # x先log到切空间与drop_weight相乘再exp到manifold
-        mv = self.ln(mv)
+
         res = self.manifold.proj(mv, self.c)
 
         if self.use_bias:
