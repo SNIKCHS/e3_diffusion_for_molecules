@@ -23,7 +23,7 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch, test_HyperbolicDiffusion
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='AE_Diffusion')
+parser.add_argument('--exp_name', type=str, default='AE_Diffusion_test')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
@@ -113,7 +113,7 @@ parser.add_argument('--normalize_factors', type=eval, default=[1, 4, 1],
 parser.add_argument('--remove_h', action='store_true')
 parser.add_argument('--include_charges', type=eval, default=True,
                     help='include atom charge or not')
-parser.add_argument('--visualize_every_batch', type=int, default=1e8,
+parser.add_argument('--visualize_epoch', type=int, default=20,
                     help="Can be used to visualize multiple times per epoch")
 parser.add_argument('--normalization_factor', type=float, default=1,
                     help="Normalize the sum aggregation of EGNN")
