@@ -17,8 +17,8 @@ import pickle
 from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_AE_epoch, test_AE
 
-parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='AE_norm_lrscheduler')
+parser = argparse.ArgumentParser(description='AE')
+parser.add_argument('--exp_name', type=str, default='HGCN')
 
 parser.add_argument('--n_epochs', type=int, default=20)
 parser.add_argument('--batch_size', type=int, default=256)
@@ -187,7 +187,7 @@ optim = get_optim(args, model)
 lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
     optim,
     patience=300,
-    factor=0.9)
+    factor=0.8)
 # print(model)
 
 gradnorm_queue = utils.Queue()

@@ -48,7 +48,7 @@ parser.add_argument('--actnorm', type=eval, default=True,
                     help='True | False')
 parser.add_argument('--break_train_epoch', type=eval, default=False,
                     help='True | False')
-parser.add_argument('--dp', type=eval, default=True,
+parser.add_argument('--dp', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--condition_time', type=eval, default=True,
                     help='True | False')
@@ -200,8 +200,8 @@ else:
 args.context_node_nf = context_node_nf
 
 
-AE_state_dict = torch.load('AutoEncoder/outputs/AutoEncoder/AE.npy')
-with open('AutoEncoder/outputs/AutoEncoder/args.pickle', 'rb') as f:
+AE_state_dict = torch.load('AutoEncoder/outputs/AE_norm_lrscheduler/AE.npy')
+with open('AutoEncoder/outputs/AE_norm_lrscheduler/args.pickle', 'rb') as f:
     AE_args = pickle.load(f)
 AutoEncoder = HyperbolicAE(AE_args)
 AutoEncoder.load_state_dict(AE_state_dict)
@@ -272,10 +272,10 @@ def main():
             if isinstance(model, en_diffusion.EnVariationalDiffusion):
                 wandb.log(model.log_info(), commit=True)
 
-            if not args.break_train_epoch:
-                analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,
-                                 dataset_info=dataset_info, device=device,
-                                 prop_dist=prop_dist, n_samples=args.n_stability_samples)
+            # if not args.break_train_epoch:
+            #     analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,
+            #                      dataset_info=dataset_info, device=device,
+            #                      prop_dist=prop_dist, n_samples=args.n_stability_samples)
             nll_val = test_HyperbolicDiffusion(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema_dp,
                            partition='Val', device=device, dtype=dtype, nodes_dist=nodes_dist,
                            property_norms=property_norms)

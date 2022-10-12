@@ -135,7 +135,7 @@ def sample(args, device, generative_model, dataset_info,
     else:
         context = None
 
-    if args.probabilistic_model == 'diffusion':
+    if args.probabilistic_model == 'diffusion' or args.probabilistic_model == 'hyperbolic_diffusion':
         x, h = generative_model.sample(batch_size, max_n_nodes, node_mask, edge_mask, context, fix_noise=fix_noise)
 
         assert_correctly_masked(x, node_mask)

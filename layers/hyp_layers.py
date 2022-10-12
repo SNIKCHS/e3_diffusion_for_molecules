@@ -165,9 +165,9 @@ class HypAgg(Module):
         row, col = edges
 
         if self.local_agg:
-            x_row = x[row]  # 提供切空间 (b*n_node*n_node,dim)
-            x_col = x[col]  # 要映射的向量 (b*n_node*n_node,dim)
-            x_local_tangent = self.manifold.logmap(x_row, x_col, c=self.c)  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
+            # x_row = x[row]  # 提供切空间 (b*n_node*n_node,dim)
+            # x_col = x[col]  # 要映射的向量 (b*n_node*n_node,dim)
+            x_local_tangent = self.manifold.logmap(x[row], x[col], c=self.c)  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
             x_local_self_tangent = self.manifold.logmap(x, x, c=self.c)  # (b*n_atom,dim)
             edge_feat = self.att(x_local_tangent, x_local_self_tangent[row], distances, edge_mask)  # (b*n_node*n_node,dim)
             agg = unsorted_segment_sum(edge_feat, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes

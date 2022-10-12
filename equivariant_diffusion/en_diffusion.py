@@ -1073,6 +1073,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         # Neural net prediction.
         eps_t = self.phi(zt, t, node_mask, edge_mask, context)
 
+
         # Compute mu for p(zs | zt).
         diffusion_utils.assert_mean_zero_with_mask(zt[:, :, :self.n_dims], node_mask)
         diffusion_utils.assert_mean_zero_with_mask(eps_t[:, :, :self.n_dims], node_mask)
@@ -1097,7 +1098,6 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         h = self.decode(x, h, node_mask, edge_mask)
         zs = torch.cat([x,h['categorical'], h['integer']], dim=2)
 
-
         return zs,zs_to_loop
 
     def sample_p_xh_given_z0(self, z0, node_mask, edge_mask, context, fix_noise=False):
@@ -1119,6 +1119,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         return x, h
 
+    @torch.no_grad()  # 不加的话会在EGNN的循环block的forward时保存所有信息，而采样会循环1000次造成内存爆炸
     def sample(self, n_samples, n_nodes, node_mask, edge_mask, context, fix_noise=False):
         """
         Draw samples from the generative model.
@@ -1137,9 +1138,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             t_array = s_array + 1
             s_array = s_array / self.T
             t_array = t_array / self.T
-            print(z.shape)
-            z_chain,z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context, fix_noise=fix_noise)
-            print(z.shape)
+            _,z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context, fix_noise=fix_noise)
 
         # Finally sample p(x, h | z_0).
         x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context, fix_noise=fix_noise)
@@ -1156,14 +1155,15 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         batch_size, n_nodes, dim = h.size()
         edges = self.get_adj_matrix(n_nodes, batch_size)
         distances, _ = coord2diff(x.view(batch_size * n_nodes, -1), edges)
-        h_pred,_ = self.Decoder.decode(h.view(-1, dim), distances, edges, node_mask, edge_mask).view(batch_size, n_nodes,
-                                                                                                   -1)  # (b,n_nodes,max_z)  # max_z = 1 padding+5 types
+        h_pred,_ = self.Decoder.decode(h.view(-1, dim), distances, edges, node_mask, edge_mask)  # (b,n_nodes,max_z)  # max_z = 1 padding+5 types
+        h_pred = h_pred.view(batch_size, n_nodes,-1)
 
         # torch.argmax(h_pred, dim=2) 0~5 -1 ->-1~4 mask ->0~4
         argmax = torch.argmax(h_pred, dim=2, keepdim=True)
         idx = ((argmax - 1) * node_mask).long() * argmax.bool()
 
         h = F.one_hot(idx.squeeze(), self.num_classes) * node_mask
+
         charge = torch.gather(self.atom_decoder.view(1, 1, -1).repeat(batch_size, n_nodes, 1), 2, idx)
         charge = charge * node_mask
         # print(x.shape, charge.shape, h.shape)
@@ -1171,6 +1171,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         return h
 
+    @torch.no_grad()
     def sample_chain(self, n_samples, n_nodes, node_mask, edge_mask, context, keep_frames=None, outdim=9):
         """
         Draw samples from the generative model, keep the intermediate states for visualization purposes.
@@ -1201,9 +1202,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         # Finally sample p(x, h | z_0).
         x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context)
 
-        xh = torch.cat([x, h['categorical'], h['integer']], dim=2)
-
-        chain[0] = xh  # Overwrite last frame with the resulting x and h.
+        chain[0] = torch.cat([x, h['categorical'], h['integer']], dim=2)  # Overwrite last frame with the resulting x and h.
         chain_flat = chain.view(n_samples * keep_frames, z.size(1),outdim)
 
         return chain_flat
@@ -1229,6 +1228,12 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         else:
             self._edges_dict[n_nodes] = {}
             return self.get_adj_matrix(n_nodes, batch_size)
+
+    def change_device(self,device):
+        self.device = device
+        self.Decoder.device = device
+        self.dynamics.device = device
+        self.atom_decoder = self.atom_decoder.to(device)
 
 
 def coord2diff(x, edge_index, norm_constant=1):

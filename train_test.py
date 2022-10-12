@@ -59,12 +59,13 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
 
         optim.step()
         lr_scheduler.step(loss)
-        if i % 100 == 0:
-            curvatures = list(model.get_submodule('encoder.curvatures'))
-            print('encoder:', curvatures)
-            curvatures = list(model.get_submodule('decoder.curvatures'))
-            print('decoder:', curvatures)
+
         if args.model not in ['MLP', 'GCN'] and args.c is None:
+            if i % 100 == 0:
+                curvatures = list(model.get_submodule('encoder.curvatures'))
+                print('encoder:', curvatures)
+                curvatures = list(model.get_submodule('decoder.curvatures'))
+                print('decoder:', curvatures)
             en_curvatures = model.get_submodule('encoder.curvatures')
             for p in en_curvatures.parameters():
                 p.data.clamp_(1e-8)
@@ -429,12 +430,17 @@ def sample_different_sizes_and_save(model, nodes_dist, args, device, dataset_inf
 def analyze_and_save(epoch, model_sample, nodes_dist, args, device, dataset_info, prop_dist,
                      n_samples=1000, batch_size=100):
     print(f'Analyzing molecule stability at epoch {epoch}...')
+
+    # device_back = model_sample.device
+    # model_sample.change_device(device)
+
     batch_size = min(batch_size, n_samples)
     assert n_samples % batch_size == 0
     molecules = {'one_hot': [], 'x': [], 'node_mask': []}
     for i in range(int(n_samples / batch_size)):
+
         nodesxsample = nodes_dist.sample(batch_size)
-        one_hot, charges, x, node_mask = sample(args, device, model_sample, dataset_info, prop_dist,
+        one_hot, _, x, node_mask = sample(args, device, model_sample, dataset_info, prop_dist,
                                                 nodesxsample=nodesxsample)
 
         molecules['one_hot'].append(one_hot.detach().cpu())
@@ -447,6 +453,8 @@ def analyze_and_save(epoch, model_sample, nodes_dist, args, device, dataset_info
     wandb.log(validity_dict)
     if rdkit_tuple is not None:
         wandb.log({'Validity': rdkit_tuple[0][0], 'Uniqueness': rdkit_tuple[0][1], 'Novelty': rdkit_tuple[0][2]})
+
+    # model_sample.change_device(device_back)
     return validity_dict
 
 
