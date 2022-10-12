@@ -1,4 +1,6 @@
 # Rdkit import should be first, do not move it
+import os
+
 from AutoEncoder.AutoEncoder import HyperbolicAE
 
 try:
