@@ -19,7 +19,7 @@ def compute_loss_and_nll(args, generative_model, nodes_dist, x, h, node_mask, ed
 
         # Here x is a position tensor, and h is a dictionary with keys
         # 'categorical' and 'integer'.
-        nll = generative_model(x, h, node_mask, edge_mask, context)
+        nll,loss_dict = generative_model(x, h, node_mask, edge_mask, context)
 
         N = node_mask.squeeze(2).sum(1).long()
 
@@ -32,7 +32,7 @@ def compute_loss_and_nll(args, generative_model, nodes_dist, x, h, node_mask, ed
         nll = nll.mean(0)
 
         reg_term = torch.tensor([0.]).to(nll.device)
-        mean_abs_z = 0.
+        mean_abs_z = loss_dict['error']
     else:
         raise ValueError(args.probabilistic_model)
 

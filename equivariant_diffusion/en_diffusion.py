@@ -918,7 +918,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         assert neg_log_pxh.size() == delta_log_px.size()
         neg_log_pxh = neg_log_pxh - delta_log_px
 
-        return neg_log_pxh
+        return neg_log_pxh,loss_dict
 
     def compute_loss(self, x, h, node_mask, edge_mask, context, t0_always, edge=None):
         """
@@ -1057,7 +1057,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         assert len(loss.shape) == 1, f'{loss.shape} has more than only batch dim.'
 
         return loss, {'t': t_int.squeeze(), 'loss_t': loss.squeeze(),
-                      'error': error.squeeze()}
+                      'error': error.squeeze().mean()}
 
     def sample_p_zs_given_zt(self, s, t, zt, node_mask, edge_mask, context, fix_noise=False):
         """Samples from zs ~ p(zs | zt). Only used during sampling."""
