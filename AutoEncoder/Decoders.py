@@ -38,6 +38,8 @@ class Decoder(nn.Module):
         #     output = self.manifold.proj_tan0(output,  self.curvatures[-1])
         if self.pred_edge:
             row, col = edges
+            output = self.manifold.logmap0(output, self.curvatures[-1])
+            output = self.manifold.proj_tan0(output,  self.curvatures[-1])
             edge_pred = self.link_net(output[row], output[col], distances, edge_mask)  # (b*atom*atom,1)
             edge_pred = self.link_out(edge_pred)
         else:

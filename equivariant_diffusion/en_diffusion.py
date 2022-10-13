@@ -406,6 +406,7 @@ class EnVariationalDiffusion(torch.nn.Module):
 
         return sigma2_t_given_s, sigma_t_given_s, alpha_t_given_s
 
+    # 可能是L_base q(ZT|x)与p(ZT)
     def kl_prior(self, xh, node_mask):
         """Computes the KL between q(z1 | x) and the prior p(z1) = Normal(0, 1).
 
@@ -729,7 +730,7 @@ class EnVariationalDiffusion(torch.nn.Module):
         assert neg_log_pxh.size() == delta_log_px.size()
         neg_log_pxh = neg_log_pxh - delta_log_px
 
-        return neg_log_pxh
+        return neg_log_pxh,loss_dict
 
     def sample_p_zs_given_zt(self, s, t, zt, node_mask, edge_mask, context, fix_noise=False):
         """Samples from zs ~ p(zs | zt). Only used during sampling."""
@@ -948,7 +949,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             lowest_t = 0
 
         # Sample a timestep t.
-        t_int = torch.randint(
+        t_int = torch.randint(  # batch_size维度是不同的t
             lowest_t, self.T + 1, size=(x.size(0), 1), device=x.device).float()
         s_int = t_int - 1  # t的前一个时间步
         t_is_zero = (t_int == 0).float()  # Important to compute log p(x | z0).
@@ -986,14 +987,16 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         if self.training and self.loss_type == 'l2':
             SNR_weight = torch.ones_like(error)
-        else:
+        else:  # 训练时计算真实的SNR
             # Compute weighting with SNR: (SNR(s-t) - 1) for epsilon parametrization.
             SNR_weight = (self.SNR(gamma_s - gamma_t) - 1).squeeze(1).squeeze(1)
         assert error.size() == SNR_weight.size()
-        loss_t_larger_than_zero = 0.5 * SNR_weight * error
+        loss_t_larger_than_zero = 0.5 * SNR_weight * error  # L1~T 系数都是0.5 * SNR_weight
 
         # The _constants_ depending on sigma_0 from the
         # cross entropy term E_q(z0 | x) [log p(x | z0)].
+
+
         neg_log_constants = -self.log_constants_p_x_given_z0(x, node_mask)
 
         # Reset constants during training with l2 loss.
@@ -1001,13 +1004,13 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             neg_log_constants = torch.zeros_like(neg_log_constants)
 
         # The KL between q(z1 | x) and p(z1) = Normal(0, 1). Should be close to zero.
-        kl_prior = self.kl_prior(xh, node_mask)
+        kl_prior = self.kl_prior(xh, node_mask)  # L_base
 
         # Combining the terms
-        if t0_always:
+        if t0_always:  #验证时
             loss_t = loss_t_larger_than_zero
             num_terms = self.T  # Since t=0 is not included here.
-            estimator_loss_terms = num_terms * loss_t
+            estimator_loss_terms = num_terms * loss_t # T*Lt
 
             # Compute noise values for t = 0.
             t_zeros = torch.zeros_like(s)
@@ -1031,6 +1034,8 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             assert kl_prior.size() == loss_term_0.size()
 
             loss = kl_prior + estimator_loss_terms + neg_log_constants + loss_term_0
+            print('loss:',loss.mean(0))
+            print('neg_log_constants:',neg_log_constants.mean(0))
 
         else:
             # Computes the L_0 term (even if gamma_t is not actually gamma_0)

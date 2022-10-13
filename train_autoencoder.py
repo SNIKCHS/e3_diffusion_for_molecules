@@ -6,7 +6,6 @@ import wandb
 
 from AutoEncoder.AutoEncoder import HyperbolicAE
 from configs.datasets_config import get_dataset_info
-from os.path import join
 from qm9 import dataset
 from qm9.models import get_optim
 from equivariant_diffusion.utils import assert_correctly_masked
@@ -18,9 +17,9 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_AE_epoch, test_AE
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='HGCN')
+parser.add_argument('--exp_name', type=str, default='HGCN_edge_proj')
 
-parser.add_argument('--n_epochs', type=int, default=20)
+parser.add_argument('--n_epochs', type=int, default=10)
 parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--lr', type=float, default=2e-4)
 parser.add_argument('--dropout', type=float, default=0.0)

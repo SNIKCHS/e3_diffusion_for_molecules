@@ -40,13 +40,16 @@ class HyperbolicAE(nn.Module):
         n_type = x_hat.size(-1)
         atom_loss_f = nn.CrossEntropyLoss(reduction='sum')
         loss0 = atom_loss_f(x_hat.view(-1, n_type), x.view(-1))/b
-
+        # print(x[0])
+        # print(torch.argmax(x_hat.view(b,n_atom, n_type)[0],dim=1))
         if self.pred_edge:
             edge_loss_f = nn.MSELoss(reduction='mean')
             zeros = torch.zeros_like(edge,device=edge.device)
             ones = torch.ones_like(edge, device=edge.device)
             edge_cutoff = torch.where(edge>5,zeros,ones)
-            loss1 = torch.sqrt(edge_loss_f(edge_hat*edge_cutoff,edge*edge_cutoff))
+            edge_hat = edge_hat * edge_cutoff
+            edge = edge*edge_cutoff
+            loss1 = torch.sqrt(edge_loss_f(edge_hat,edge))
         else:
             loss1=torch.tensor(0)
         return loss0,loss1
