@@ -2,6 +2,10 @@ from torch import nn
 import torch
 import math
 
+import manifolds
+from layers.hyp_layers import HyperbolicGraphConvolution
+
+
 class GCL(nn.Module):
     def __init__(self, input_nf, output_nf, hidden_nf, normalization_factor, aggregation_method,
                  edges_in_d=0, nodes_att_dim=0, act_fn=nn.SiLU(), attention=False):
@@ -66,6 +70,28 @@ class GCL(nn.Module):
             h = h * node_mask
         return h, mij
 
+class HGCL(nn.Module):
+    def __init__(self, input_nf, output_nf, c_in, c_out, act_fn=nn.SiLU(),manifold='Hyperboloid',edges_in_d=2):
+        super(HGCL, self).__init__()
+        self.manifold = getattr(manifolds, manifold)()
+        self.hgcl = HyperbolicGraphConvolution(self.manifold, input_nf, output_nf, c_in, c_out, dropout=0, act=act_fn, use_bias=1, local_agg=1,edge_dim=edges_in_d)
+        self.c_in = c_in
+        self.c_out = c_out
+
+    def forward(self, h, edge_index, edge_attr=None, node_attr=None, node_mask=None, edge_mask=None):
+        h = self.manifold.proj(
+            self.manifold.expmap0(
+                self.manifold.proj_tan0(h, self.c_in), c=self.c_in
+            ),
+            c=self.c_in
+        )
+        input = (h, edge_attr, edge_index, node_mask, edge_mask)
+        output, _, _, _, _ = self.hgcl(input)
+        output = self.manifold.proj_tan0(
+            self.manifold.logmap0(output, self.c_out),
+            c=self.c_out
+        )
+        return output, None
 
 class EquivariantUpdate(nn.Module):
     def __init__(self, hidden_nf, normalization_factor, aggregation_method,
@@ -110,7 +136,7 @@ class EquivariantUpdate(nn.Module):
 class EquivariantBlock(nn.Module):
     def __init__(self, hidden_nf, edge_feat_nf=2, device='cpu', act_fn=nn.SiLU(), n_layers=2, attention=True,
                  norm_diff=True, tanh=False, coords_range=15, norm_constant=1, sin_embedding=None,
-                 normalization_factor=100, aggregation_method='sum'):
+                 normalization_factor=100, aggregation_method='sum',hyp=False):
         super(EquivariantBlock, self).__init__()
         self.hidden_nf = hidden_nf
         self.device = device
@@ -122,11 +148,21 @@ class EquivariantBlock(nn.Module):
         self.normalization_factor = normalization_factor
         self.aggregation_method = aggregation_method
 
-        for i in range(0, n_layers):
-            self.add_module("gcl_%d" % i, GCL(self.hidden_nf, self.hidden_nf, self.hidden_nf, edges_in_d=edge_feat_nf,
-                                              act_fn=act_fn, attention=attention,
-                                              normalization_factor=self.normalization_factor,
-                                              aggregation_method=self.aggregation_method))
+        if hyp:
+            acts = [act_fn] * n_layers  # len=args.num_layers
+            dims = [self.hidden_nf] * (n_layers + 1)  # len=args.num_layers+1
+            curvatures = nn.ParameterList([nn.Parameter(torch.Tensor([1.])) for _ in range(n_layers + 1)])
+            for i in range(0, n_layers):
+                self.add_module("gcl_%d" % i,
+                                HGCL(
+                                    dims[i], dims[i+1], curvatures[i], curvatures[i+1],acts[i],manifold='Hyperboloid',edges_in_d=edge_feat_nf
+                                ))
+        else:
+            for i in range(0, n_layers):
+                self.add_module("gcl_%d" % i, GCL(self.hidden_nf, self.hidden_nf, self.hidden_nf, edges_in_d=edge_feat_nf,
+                                                  act_fn=act_fn, attention=attention,
+                                                  normalization_factor=self.normalization_factor,
+                                                  aggregation_method=self.aggregation_method))
         self.add_module("gcl_equiv", EquivariantUpdate(hidden_nf, edges_in_d=edge_feat_nf, act_fn=nn.SiLU(), tanh=tanh,
                                                        coords_range=self.coords_range_layer,
                                                        normalization_factor=self.normalization_factor,
@@ -140,7 +176,7 @@ class EquivariantBlock(nn.Module):
 
         if self.sin_embedding is not None:
             distances = self.sin_embedding(distances)
-        edge_attr = torch.cat([distances, edge_attr], dim=1)  # (b*n_nodes*n_nodes,2)edge_attr=distances 把两个相同的distances concat了
+        edge_attr = torch.cat([distances, edge_attr], dim=1)  # (b*n_nodes*n_nodes,2) edge_attr是最初的distance
 
         for i in range(0, self.n_layers):
             h, _ = self._modules["gcl_%d" % i](h, edge_index, edge_attr=edge_attr, node_mask=node_mask, edge_mask=edge_mask)
@@ -155,7 +191,7 @@ class EquivariantBlock(nn.Module):
 class EGNN(nn.Module):
     def __init__(self, in_node_nf, in_edge_nf, hidden_nf, device='cpu', act_fn=nn.SiLU(), n_layers=3, attention=False,
                  norm_diff=True, out_node_nf=None, tanh=False, coords_range=15, norm_constant=1, inv_sublayers=2,
-                 sin_embedding=False, normalization_factor=100, aggregation_method='sum'):
+                 sin_embedding=False, normalization_factor=100, aggregation_method='sum',hyp=False):
         super(EGNN, self).__init__()
         if out_node_nf is None:
             out_node_nf = in_node_nf
@@ -183,7 +219,7 @@ class EGNN(nn.Module):
                                                                coords_range=coords_range, norm_constant=norm_constant,
                                                                sin_embedding=self.sin_embedding,
                                                                normalization_factor=self.normalization_factor,
-                                                               aggregation_method=self.aggregation_method))
+                                                               aggregation_method=self.aggregation_method,hyp=hyp))
         self.to(self.device)
 
     def forward(self, h, x, edge_index, node_mask=None, edge_mask=None):

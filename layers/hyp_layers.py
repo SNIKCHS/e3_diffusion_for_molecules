@@ -58,10 +58,10 @@ class HyperbolicGraphConvolution(nn.Module):
     Hyperbolic graph convolution layer.
     """
 
-    def __init__(self, manifold, in_features, out_features, c_in, c_out, dropout, act, use_bias, local_agg):
+    def __init__(self, manifold, in_features, out_features, c_in, c_out, dropout, act, use_bias, local_agg,edge_dim=1):
         super(HyperbolicGraphConvolution, self).__init__()
         self.linear = HypLinear(manifold, in_features, out_features, c_in, dropout, use_bias)
-        self.agg = HypAgg(manifold, c_in, out_features, dropout, local_agg=local_agg)
+        self.agg = HypAgg(manifold, c_in, out_features, dropout, local_agg=local_agg,edge_dim=edge_dim)
         self.hyp_act = HypAct(manifold, c_in, c_out, act)
 
     def forward(self, input):
@@ -145,7 +145,7 @@ class HypAgg(Module):
     Hyperbolic aggregation layer.
     """
 
-    def __init__(self, manifold, c, in_features, dropout, local_agg=True):
+    def __init__(self, manifold, c, in_features, dropout, local_agg=True,edge_dim=1):
         super(HypAgg, self).__init__()
         self.manifold = manifold
         self.c = c
@@ -154,7 +154,7 @@ class HypAgg(Module):
         self.local_agg = local_agg
         self.normalization_factor = 100
         self.aggregation_method = 'sum'
-        self.att = DenseAtt(in_features, dropout)
+        self.att = DenseAtt(in_features, dropout,edge_dim=edge_dim)
         self.node_mlp = nn.Sequential(
             nn.Linear(2 * in_features, in_features),
             nn.ReLU(),

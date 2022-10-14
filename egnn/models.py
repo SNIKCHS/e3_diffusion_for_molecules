@@ -10,7 +10,7 @@ class EGNN_dynamics_QM9(nn.Module):
                  n_dims, hidden_nf=64, device='cpu',
                  act_fn=torch.nn.SiLU(), n_layers=4, attention=False,
                  condition_time=True, tanh=False, mode='egnn_dynamics', norm_constant=0,
-                 inv_sublayers=2, sin_embedding=False, normalization_factor=100, aggregation_method='sum'):
+                 inv_sublayers=2, sin_embedding=False, normalization_factor=100, aggregation_method='sum',hyp=False):
         super().__init__()
         self.mode = mode
         if mode == 'egnn_dynamics':
@@ -20,7 +20,7 @@ class EGNN_dynamics_QM9(nn.Module):
                 n_layers=n_layers, attention=attention, tanh=tanh, norm_constant=norm_constant,
                 inv_sublayers=inv_sublayers, sin_embedding=sin_embedding,
                 normalization_factor=normalization_factor,
-                aggregation_method=aggregation_method)
+                aggregation_method=aggregation_method,hyp=hyp)
             self.in_node_nf = in_node_nf
         elif mode == 'gnn_dynamics':
             self.gnn = GNN(

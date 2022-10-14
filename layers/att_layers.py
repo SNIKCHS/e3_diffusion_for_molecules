@@ -12,11 +12,11 @@ def calc_gaussian(x,h):
     left = 1/(math.sqrt(2*math.pi)*h)
     return left * torch.exp(-molecule/demominator )
 class DenseAtt(nn.Module):
-    def __init__(self, in_features, dropout):
+    def __init__(self, in_features, dropout,edge_dim=1):
         super(DenseAtt, self).__init__()
         self.dropout = dropout
         self.linear = nn.Sequential(
-            nn.Linear(2 * in_features+1, 2 * in_features, bias=True),
+            nn.Linear(2 * in_features+edge_dim, 2 * in_features, bias=True),
             nn.SiLU(),
             nn.Dropout(self.dropout),
             nn.Linear(2 * in_features, in_features, bias=True),
@@ -49,7 +49,7 @@ class DenseAtt(nn.Module):
         x_right = x_tangent_self  # (b*n_node*n_node,dim)
 
         x_cat = torch.concat((x_left, x_right,gauss_dist), dim=1)  # (b*n*n,2*dim+1)
-
+        # print(x_left.shape, x_right.shape,gauss_dist.shape)
         mij = self.linear(x_cat)  # (b*n_node*n_node,dim)
 
         att = self.att_mlp(mij)  # (b*n_node*n_node,1)

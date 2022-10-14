@@ -31,7 +31,7 @@ def get_model(args, device, dataset_info, dataloader_train, encoder=None, decode
         act_fn=torch.nn.SiLU(), n_layers=args.n_layers,
         attention=args.attention, tanh=args.tanh, mode=args.model, norm_constant=args.norm_constant,
         inv_sublayers=args.inv_sublayers, sin_embedding=args.sin_embedding,
-        normalization_factor=args.normalization_factor, aggregation_method=args.aggregation_method)
+        normalization_factor=args.normalization_factor, aggregation_method=args.aggregation_method,hyp=args.hyp)
 
     if args.probabilistic_model == 'diffusion':
         vdm = EnVariationalDiffusion(

@@ -59,7 +59,7 @@ parser.add_argument('--clip_grad', type=eval, default=True,
 parser.add_argument('--trace', type=str, default='hutch',
                     help='hutch | exact')
 # EGNN args -->
-parser.add_argument('--hyp', type=eval, default=False,
+parser.add_argument('--hyp', type=eval, default=True,
                     help='use hyperbolic gcl')
 parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
@@ -204,8 +204,8 @@ else:
 args.context_node_nf = context_node_nf
 
 
-AE_state_dict = torch.load('AutoEncoder/outputs/HGCN_8layers_128hid/AE.npy')
-with open('AutoEncoder/outputs/HGCN_8layers_128hid/args.pickle', 'rb') as f:
+AE_state_dict = torch.load('AutoEncoder/outputs/AE_HGCN_8layers_128hid/AE.npy')
+with open('AutoEncoder/outputs/AE_HGCN_8layers_128hid/args.pickle', 'rb') as f:
     AE_args = pickle.load(f)
 AutoEncoder = HyperbolicAE(AE_args)
 AutoEncoder.load_state_dict(AE_state_dict)

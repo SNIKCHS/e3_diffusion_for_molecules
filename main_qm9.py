@@ -55,6 +55,8 @@ parser.add_argument('--clip_grad', type=eval, default=True,
 parser.add_argument('--trace', type=str, default='hutch',
                     help='hutch | exact')
 # EGNN args -->
+parser.add_argument('--hyp', type=eval, default=False,
+                    help='use hyperbolic gcl')
 parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
 parser.add_argument('--inv_sublayers', type=int, default=1,
@@ -216,11 +218,16 @@ def check_mask_correct(variables, node_mask):
 
 
 def main():
-    if args.resume is not None:
-        flow_state_dict = torch.load(join(args.resume, 'flow.npy'))
-        optim_state_dict = torch.load(join(args.resume, 'optim.npy'))
-        model.load_state_dict(flow_state_dict)
-        optim.load_state_dict(optim_state_dict)
+    # if args.resume is not None:
+    #     flow_state_dict = torch.load(join(args.resume, 'flow.npy'))
+    #     optim_state_dict = torch.load(join(args.resume, 'optim.npy'))
+    #     model.load_state_dict(flow_state_dict)
+    #     optim.load_state_dict(optim_state_dict)
+
+    # flow_state_dict = torch.load('outputs/EDM/generative_model.npy')
+    # optim_state_dict = torch.load('outputs/EDM/optim.npy')
+    # model.load_state_dict(flow_state_dict)
+    # optim.load_state_dict(optim_state_dict)
 
     # Initialize dataparallel if enabled and possible.
     if args.dp and torch.cuda.device_count() > 1:
@@ -247,6 +254,14 @@ def main():
     best_nll_val = 1e8
     best_nll_test = 1e8
 
+    # analyze_and_save(args=args, epoch=199, model_sample=model_ema, nodes_dist=nodes_dist, #
+    #                  dataset_info=dataset_info, device=device,
+    #                  prop_dist=prop_dist, n_samples=args.n_stability_samples)
+    # wandb: atm_stable
+    # 0.91249
+    # wandb: mol_stable
+    # 0.218
+    # exit(0)
     for epoch in range(args.start_epoch, args.n_epochs):
         start_epoch = time.time()
         train_epoch(args=args, loader=dataloaders['train'], epoch=epoch, model=model, model_dp=model_dp,
@@ -259,20 +274,20 @@ def main():
             if isinstance(model, en_diffusion.EnVariationalDiffusion):
                 wandb.log(model.log_info(), commit=True)
 
-            # if not args.break_train_epoch:
-            #     analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,
-            #                      dataset_info=dataset_info, device=device,
-            #                      prop_dist=prop_dist, n_samples=args.n_stability_samples)
+            if epoch % args.visualize_epoch == 0:
+                analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,
+                                 dataset_info=dataset_info, device=device,
+                                 prop_dist=prop_dist, n_samples=args.n_stability_samples)
             nll_val = test(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema_dp,
                            partition='Val', device=device, dtype=dtype, nodes_dist=nodes_dist,
                            property_norms=property_norms)
-            nll_test = test(args=args, loader=dataloaders['test'], epoch=epoch, eval_model=model_ema_dp,
-                            partition='Test', device=device, dtype=dtype,
-                            nodes_dist=nodes_dist, property_norms=property_norms)
+            # nll_test = test(args=args, loader=dataloaders['test'], epoch=epoch, eval_model=model_ema_dp,
+            #                 partition='Test', device=device, dtype=dtype,
+            #                 nodes_dist=nodes_dist, property_norms=property_norms)
 
             if nll_val < best_nll_val:
                 best_nll_val = nll_val
-                best_nll_test = nll_test
+                # best_nll_test = nll_test
                 if args.save_model:
                     args.current_epoch = epoch + 1
                     utils.save_model(optim, 'outputs/%s/optim.npy' % args.exp_name)
@@ -289,11 +304,12 @@ def main():
                         utils.save_model(model_ema, 'outputs/%s/generative_model_ema_%d.npy' % (args.exp_name, epoch))
                     with open('outputs/%s/args_%d.pickle' % (args.exp_name, epoch), 'wb') as f:
                         pickle.dump(args, f)
-            print('Val loss: %.4f \t Test loss:  %.4f' % (nll_val, nll_test))
-            print('Best val loss: %.4f \t Best test loss:  %.4f' % (best_nll_val, best_nll_test))
+            print('Val loss: %.4f ' % (nll_val))
+            print('Best val loss: %.4f' % (best_nll_val))
             wandb.log({"Val loss ": nll_val}, commit=True)
-            wandb.log({"Test loss ": nll_test}, commit=True)
-            wandb.log({"Best cross-validated test loss ": best_nll_test}, commit=True)
+            wandb.log({"Best val loss ": best_nll_val}, commit=True)
+            # wandb.log({"Test loss ": nll_test}, commit=True)
+            # wandb.log({"Best cross-validated test loss ": best_nll_test}, commit=True)
 
 
 if __name__ == "__main__":
