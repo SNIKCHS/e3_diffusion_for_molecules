@@ -59,6 +59,8 @@ parser.add_argument('--clip_grad', type=eval, default=True,
 parser.add_argument('--trace', type=str, default='hutch',
                     help='hutch | exact')
 # EGNN args -->
+parser.add_argument('--hyp', type=eval, default=False,
+                    help='use hyperbolic gcl')
 parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
 parser.add_argument('--inv_sublayers', type=int, default=1,
@@ -202,8 +204,8 @@ else:
 args.context_node_nf = context_node_nf
 
 
-AE_state_dict = torch.load('AutoEncoder/outputs/AE_norm_lrscheduler/AE.npy')
-with open('AutoEncoder/outputs/AE_norm_lrscheduler/args.pickle', 'rb') as f:
+AE_state_dict = torch.load('AutoEncoder/outputs/HGCN_8layers_128hid/AE.npy')
+with open('AutoEncoder/outputs/HGCN_8layers_128hid/args.pickle', 'rb') as f:
     AE_args = pickle.load(f)
 AutoEncoder = HyperbolicAE(AE_args)
 AutoEncoder.load_state_dict(AE_state_dict)
@@ -231,11 +233,15 @@ def check_mask_correct(variables, node_mask):
 
 
 def main():
-    if args.resume is not None:
-        flow_state_dict = torch.load(join(args.resume, 'flow.npy'))
-        optim_state_dict = torch.load(join(args.resume, 'optim.npy'))
-        model.load_state_dict(flow_state_dict)
-        optim.load_state_dict(optim_state_dict)
+    # if args.resume is not None:
+    #     flow_state_dict = torch.load(join(args.resume, 'flow.npy'))
+    #     optim_state_dict = torch.load(join(args.resume, 'optim.npy'))
+    #     model.load_state_dict(flow_state_dict)
+    #     optim.load_state_dict(optim_state_dict)
+    # flow_state_dict = torch.load('outputs/AE_Diffusion_test/generative_model.npy')
+    # optim_state_dict = torch.load('outputs/AE_Diffusion_test/optim.npy')
+    # model.load_state_dict(flow_state_dict,False)
+    # optim.load_state_dict(optim_state_dict)
 
     # Initialize dataparallel if enabled and possible.
     if args.dp and torch.cuda.device_count() > 1:
@@ -262,6 +268,14 @@ def main():
     best_nll_val = 1e8
     best_nll_test = 1e8
 
+    # analyze_and_save(args=args, epoch=117, model_sample=model_ema, nodes_dist=nodes_dist,
+    #                  dataset_info=dataset_info, device=device,
+    #                  prop_dist=prop_dist, n_samples=args.n_stability_samples)
+    # # wandb: atm_stable
+    # # 0.51561
+    # # wandb: mol_stable
+    # # 0.0
+    # exit(0)
     for epoch in range(args.start_epoch, args.n_epochs):
         start_epoch = time.time()
         train_HyperbolicDiffusion_epoch(args=args, loader=dataloaders['train'], epoch=epoch, model=model, model_dp=model_dp,
@@ -274,10 +288,10 @@ def main():
             if isinstance(model, en_diffusion.EnVariationalDiffusion):
                 wandb.log(model.log_info(), commit=True)
 
-            # if not args.break_train_epoch:
-            #     analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,
-            #                      dataset_info=dataset_info, device=device,
-            #                      prop_dist=prop_dist, n_samples=args.n_stability_samples)
+            if epoch % args.visualize_epoch == 0:
+                analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,
+                                 dataset_info=dataset_info, device=device,
+                                 prop_dist=prop_dist, n_samples=args.n_stability_samples)
             nll_val = test_HyperbolicDiffusion(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema_dp,
                            partition='Val', device=device, dtype=dtype, nodes_dist=nodes_dist,
                            property_norms=property_norms)

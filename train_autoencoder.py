@@ -17,14 +17,14 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_AE_epoch, test_AE
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='HGCN_edge_proj')
+parser.add_argument('--exp_name', type=str, default='AE_HGCN_8layers_128hid')
 
-parser.add_argument('--n_epochs', type=int, default=10)
-parser.add_argument('--batch_size', type=int, default=256)
+parser.add_argument('--n_epochs', type=int, default=200)
+parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--lr', type=float, default=2e-4)
-parser.add_argument('--dropout', type=float, default=0.0)
+parser.add_argument('--dropout', type=float, default=0)
 parser.add_argument('--dim', type=int, default=20)
-parser.add_argument('--num_layers', type=int, default=4)
+parser.add_argument('--num_layers', type=int, default=8)
 parser.add_argument('--ode_regularization', type=float, default=1e-3)
 parser.add_argument('--bias', type=int, default=1)
 parser.add_argument('--max_z', type=int, default=6)  # pad+5 types
@@ -34,16 +34,18 @@ parser.add_argument('--model', type=str, default='HGCN',
 parser.add_argument('--manifold', type=str, default='Hyperboloid',
                     help='Euclidean, Hyperboloid, PoincareBall')
 parser.add_argument('--c', type=float, default=None)
-parser.add_argument('--act', type=str, default='selu',
+parser.add_argument('--act', type=str, default='silu',
                     help='relu,silu,selu,leaky_relu')
 parser.add_argument('--local_agg', type=int, default=1)
-parser.add_argument('--pred_edge', type=eval, default=True,
+parser.add_argument('--lr_scheduler', type=eval, default=False,
+                    help='True | False')
+parser.add_argument('--pred_edge', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--encdec_share_curvature', type=eval, default=False,
                     help='True | False')
+parser.add_argument('--hidden_dim', type=int, default=128)
 
-parser.add_argument('--brute_force', type=eval, default=False,
-                    help='True | False')
+
 parser.add_argument('--actnorm', type=eval, default=True,
                     help='True | False')
 parser.add_argument('--break_train_epoch', type=eval, default=False,
@@ -183,11 +185,13 @@ model = HyperbolicAE(args)  # model=EnVariationalDiffusion 包含EGNN_dynamics_Q
 model = model.to(device)
 
 optim = get_optim(args, model)
-lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    optim,
-    patience=300,
-    factor=0.8)
-# print(model)
+if args.lr_scheduler:
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optim,
+        patience=300,
+        factor=0.8)
+else:
+    lr_scheduler = None
 
 gradnorm_queue = utils.Queue()
 gradnorm_queue.add(3000)  # Add large value that will be flushed.
@@ -238,8 +242,6 @@ def main():
         print(f"Epoch took {time.time() - start_epoch:.1f} seconds.")
 
         if epoch % args.test_epochs == 0:
-
-
             nll_val = test_AE(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema_dp,
                            partition='Val', device=device, dtype=dtype, property_norms=property_norms)
             # nll_test = test(args=args, loader=dataloaders['test'], epoch=epoch, eval_model=model_ema_dp,
@@ -269,9 +271,9 @@ def main():
             print('Val loss: %.4f ' % (nll_val))
             print('Best val loss: %.4f' % (best_nll_val))
             wandb.log({"Val loss ": nll_val}, commit=True)
+            wandb.log({"Best val loss ": best_nll_val}, commit=True)
             # wandb.log({"Test loss ": nll_test}, commit=True)
             # wandb.log({"Best cross-validated test loss ": best_nll_test}, commit=True)
-
 
 if __name__ == "__main__":
     main()

@@ -51,7 +51,7 @@ class HyperbolicAE(nn.Module):
             edge = edge*edge_cutoff
             loss1 = torch.sqrt(edge_loss_f(edge_hat,edge))
         else:
-            loss1=torch.tensor(0)
+            loss1=torch.tensor(0.0,device=loss0.device)
         return loss0,loss1
 
     def get_adj_matrix(self, n_nodes, batch_size):

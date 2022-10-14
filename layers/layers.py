@@ -20,8 +20,8 @@ def get_dim_act(args):
         act = getattr(F, args.act)
     acts = [act] * (args.num_layers)
 
-    dims = [args.dim] * (args.num_layers+1)
-
+    # dims = [args.dim] * (args.num_layers+1)
+    dims = [args.dim] + [args.hidden_dim] * (args.num_layers - 1) + [args.dim]  # len=args.num_layers+1
     return dims, acts
 
 def calc_gaussian(x,h):

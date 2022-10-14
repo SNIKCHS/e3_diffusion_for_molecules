@@ -22,7 +22,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
     nll_epoch = []
     n_iterations = len(loader)
     for i, data in enumerate(loader):
-
+        start = time.time()
         x = data['positions'].to(device, dtype)
         node_mask = data['atom_mask'].to(device, dtype).unsqueeze(2)  # (b,n_atom,1)
         edge_mask = data['edge_mask'].to(device, dtype)
@@ -44,12 +44,9 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         optim.zero_grad()
 
         # transform batch through flow
-        nodeloss, edgeloss = model(x, h, node_mask, edge_mask)
-        reg_term = torch.tensor(0)
-        # standard nll from forward KL
+        nodeloss, edgeloss = model_dp(x, h, node_mask, edge_mask)
         nll = nodeloss + edgeloss
-        loss = nll + args.ode_regularization * reg_term
-
+        loss = nll
         loss.backward()
 
         if args.clip_grad:
@@ -58,7 +55,8 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
             grad_norm = 0.
 
         optim.step()
-        lr_scheduler.step(loss)
+        if args.lr_scheduler:
+            lr_scheduler.step(loss)
 
         if args.model not in ['MLP', 'GCN'] and args.c is None:
             if i % 100 == 0:
@@ -80,8 +78,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         if i % args.n_report_steps == 0:
             print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
                   f"Loss {loss.item():.4f}, node_pred_loss: {nodeloss.item():.4f}, edge_pred_loss: {edgeloss.item():.4f}, "
-                  f"RegTerm: {reg_term.item():.1f}, "
-                  f"GradNorm: {grad_norm:.1f}")
+                  f"GradNorm: {grad_norm:.1f},time:{time.time() - start:.4f}")
         nll_epoch.append(nll.item())
         wandb.log({"Batch NLL": nll.item(),'node_loss': nodeloss.item(),'edge_pred_loss': edgeloss.item()}, commit=True)
         if args.break_train_epoch:
@@ -90,8 +87,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
 
 
 def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms,
-                                    optim,
-                                    nodes_dist, gradnorm_queue, dataset_info, prop_dist):
+                                    optim,nodes_dist, gradnorm_queue, dataset_info, prop_dist):
     model_dp.train()
     model.train()
     nll_epoch = []
