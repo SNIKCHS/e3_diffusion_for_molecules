@@ -1035,7 +1035,6 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
             loss = kl_prior + estimator_loss_terms + neg_log_constants + loss_term_0
 
-
         else:
             # Computes the L_0 term (even if gamma_t is not actually gamma_0)
             # and this will later be selected via masking.
@@ -1056,7 +1055,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             assert kl_prior.size() == estimator_loss_terms.size()
             assert kl_prior.size() == neg_log_constants.size()
 
-            loss = kl_prior + estimator_loss_terms + neg_log_constants
+            loss = kl_prior + estimator_loss_terms + neg_log_constants # neg_log_constants 训练时为0
 
         assert len(loss.shape) == 1, f'{loss.shape} has more than only batch dim.'
 

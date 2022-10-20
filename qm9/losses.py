@@ -24,8 +24,10 @@ def compute_loss_and_nll(args, generative_model, nodes_dist, x, h, node_mask, ed
         N = node_mask.squeeze(2).sum(1).long()
 
         log_pN = nodes_dist.log_prob(N)
-
+        if generative_model.training :
+            log_pN = torch.zeros_like(nll,device=nll.device)
         assert nll.size() == log_pN.size()
+
         nll = nll - log_pN
 
         # Average over batch.

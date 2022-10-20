@@ -17,12 +17,12 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_AE_epoch, test_AE
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='AE_HGCN')
+parser.add_argument('--exp_name', type=str, default='AE_HGCN_dropout_noclipgrad')
 
 parser.add_argument('--n_epochs', type=int, default=1000)
 parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--lr', type=float, default=2e-4)
-parser.add_argument('--dropout', type=float, default=0)
+parser.add_argument('--dropout', type=float, default=0.1)
 parser.add_argument('--dim', type=int, default=20)
 parser.add_argument('--num_layers', type=int, default=4)
 parser.add_argument('--ode_regularization', type=float, default=1e-3)
@@ -50,7 +50,7 @@ parser.add_argument('--break_train_epoch', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--dp', type=eval, default=False,
                     help='True | False')
-parser.add_argument('--clip_grad', type=eval, default=True,
+parser.add_argument('--clip_grad', type=eval, default=False,
                     help='True | False')
 
 # <-- EGNN args
@@ -227,7 +227,7 @@ def main():
             #                 partition='Test', device=device, dtype=dtype,
             #                 nodes_dist=nodes_dist, property_norms=property_norms)
 
-            if nll_val < best_nll_val:
+            if nll_val <= best_nll_val:
                 best_nll_val = nll_val
                 # best_nll_test = nll_test
                 if args.save_model:  # 保存当前最优

@@ -26,7 +26,7 @@ from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiff
     save_and_sample_chain, sample_different_sizes_and_save
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_encnorm')
+parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
@@ -42,7 +42,7 @@ parser.add_argument('--diffusion_noise_precision', type=float, default=1e-5,
 parser.add_argument('--diffusion_loss_type', type=str, default='l2',
                     help='vlb, l2')
 
-parser.add_argument('--n_epochs', type=int, default=200)
+parser.add_argument('--n_epochs', type=int, default=1000)
 parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--brute_force', type=eval, default=False,
@@ -55,12 +55,12 @@ parser.add_argument('--dp', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--condition_time', type=eval, default=True,
                     help='True | False')
-parser.add_argument('--clip_grad', type=eval, default=True,
+parser.add_argument('--clip_grad', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--trace', type=str, default='hutch',
                     help='hutch | exact')
 # EGNN args -->
-parser.add_argument('--hyp', type=eval, default=False,
+parser.add_argument('--hyp', type=eval, default=True,
                     help='use hyperbolic gcl')
 parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
@@ -118,7 +118,7 @@ parser.add_argument('--normalize_factors', type=eval, default=[1, 4, 1],
 parser.add_argument('--remove_h', action='store_true')
 parser.add_argument('--include_charges', type=eval, default=True,
                     help='include atom charge or not')
-parser.add_argument('--visualize_epoch', type=int, default=1,
+parser.add_argument('--visualize_epoch', type=int, default=5,
                     help="Can be used to visualize multiple times per epoch")
 parser.add_argument('--normalization_factor', type=float, default=1,
                     help="Normalize the sum aggregation of EGNN")
@@ -205,8 +205,8 @@ else:
 args.context_node_nf = context_node_nf
 
 
-AE_state_dict = torch.load('outputs/AE_HGCN/AE.npy')
-with open('outputs/AE_HGCN/args.pickle', 'rb') as f:
+AE_state_dict = torch.load('outputs/AE_HGCN_dropout/AE.npy')
+with open('outputs/AE_HGCN_dropout/args.pickle', 'rb') as f:
     AE_args = pickle.load(f)
 
 AutoEncoder = HyperbolicAE(AE_args)
@@ -295,15 +295,12 @@ def main():
                     nodes_dist=nodes_dist, dataset_info=dataset_info,
                     gradnorm_queue=gradnorm_queue, optim=optim, prop_dist=prop_dist)
         print(f"Epoch took {time.time() - start_epoch:.1f} seconds.")
-
+        if epoch % args.visualize_epoch == 0 and epoch != 0:
+            analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,
+                             dataset_info=dataset_info, device=device,
+                             prop_dist=prop_dist, n_samples=args.n_stability_samples)
         if epoch % args.test_epochs == 0:
-            if isinstance(model, en_diffusion.EnVariationalDiffusion):
-                wandb.log(model.log_info(), commit=True)
-
-            # if epoch % args.visualize_epoch == 0 and epoch != 0:
-            #     analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,
-            #                      dataset_info=dataset_info, device=device,
-            #                      prop_dist=prop_dist, n_samples=args.n_stability_samples)
+            wandb.log(model.log_info(), commit=True)
             nll_val = test_HyperbolicDiffusion(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema_dp,
                            partition='Val', device=device, dtype=dtype, nodes_dist=nodes_dist,
                            property_norms=property_norms)

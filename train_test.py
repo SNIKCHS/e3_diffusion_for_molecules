@@ -157,21 +157,21 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
         if args.break_train_epoch:
             break
 
-    if epoch % args.visualize_epoch == 0:
+    if epoch % args.visualize_epoch == 0 and epoch!=0:
         start = time.time()
         if len(args.conditioning) > 0:
             save_and_sample_conditional(args, device, model_ema, prop_dist, dataset_info, epoch=epoch)
-        # save_and_sample_chain(model_ema, args, device, dataset_info, prop_dist, epoch=epoch)
+        save_and_sample_chain(model_ema, args, device, dataset_info, prop_dist, epoch=epoch)
 
-        # sample_different_sizes_and_save(model_ema, nodes_dist, args, device, dataset_info,
-        #                                 prop_dist, epoch=epoch)
-        # 暂时先用model_dp
-        sample_different_sizes_and_save(model_dp, nodes_dist, args, device, dataset_info,
+        sample_different_sizes_and_save(model_ema, nodes_dist, args, device, dataset_info,
                                         prop_dist, epoch=epoch)
+        # 暂时先用model_dp
+        # sample_different_sizes_and_save(model_dp, nodes_dist, args, device, dataset_info,
+        #                                 prop_dist, epoch=epoch)
         print(f'Sampling took {time.time() - start:.2f} seconds')
 
         vis.visualize(f"outputs/{args.exp_name}/epoch_{epoch}_", dataset_info=dataset_info, wandb=wandb)
-        # vis.visualize_chain(f"outputs/{args.exp_name}/epoch_{epoch}_/chain/", dataset_info, wandb=wandb)
+        vis.visualize_chain(f"outputs/{args.exp_name}/epoch_{epoch}_/chain/", dataset_info, wandb=wandb)
         if len(args.conditioning) > 0:
             vis.visualize_chain("outputs/%s/epoch_%d_/conditional/" % (args.exp_name, epoch), dataset_info,
                                 wandb=wandb, mode='conditional')
