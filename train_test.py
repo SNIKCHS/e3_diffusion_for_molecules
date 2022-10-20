@@ -15,7 +15,7 @@ import torch
 
 
 def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
-                   gradnorm_queue,lr_scheduler):
+                   gradnorm_queue, lr_scheduler):
     # torch.autograd.set_detect_anomaly(True)
     model_dp.train()
     model.train()
@@ -32,7 +32,11 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         charges = (data['charges'] if args.include_charges else torch.zeros(0)).to(device, dtype)
 
         x = remove_mean_with_mask(x, node_mask)
-
+        if args.data_augmentation:
+            x = utils.random_rotation(x).detach()
+        # eps = sample_center_gravity_zero_gaussian_with_mask(x.size(), x.device, node_mask)
+        # x = x + eps * args.augment_noise
+        # x = remove_mean_with_mask(x, node_mask)
         h = (categories.long(), charges)
 
         if len(args.conditioning) > 0:
@@ -44,9 +48,8 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         optim.zero_grad()
 
         # transform batch through flow
-        nodeloss, edgeloss = model_dp(x, h, node_mask, edge_mask)
-        nll = nodeloss + edgeloss
-        loss = nll
+        rec_loss, KL_loss = model_dp(x, h, node_mask, edge_mask)
+        loss = rec_loss + args.ode_regularization*KL_loss
         loss.backward()
 
         if args.clip_grad:
@@ -59,11 +62,11 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
             lr_scheduler.step(loss)
 
         if args.model not in ['MLP', 'GCN'] and args.c is None:
-            if i % 100 == 0:
-                curvatures = list(model.get_submodule('encoder.curvatures'))
-                print('encoder:', curvatures)
-                curvatures = list(model.get_submodule('decoder.curvatures'))
-                print('decoder:', curvatures)
+            # if i % 100 == 0:
+            #     curvatures = list(model.get_submodule('encoder.curvatures'))
+            #     print('encoder:', curvatures)
+            #     curvatures = list(model.get_submodule('decoder.curvatures'))
+            #     print('decoder:', curvatures)
             en_curvatures = model.get_submodule('encoder.curvatures')
             for p in en_curvatures.parameters():
                 p.data.clamp_(1e-8)
@@ -77,17 +80,18 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
 
         if i % args.n_report_steps == 0:
             print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
-                  f"Loss {loss.item():.4f}, node_pred_loss: {nodeloss.item():.4f}, edge_pred_loss: {edgeloss.item():.4f}, "
+                  f"Loss {loss.item():.4f}, rec_loss: {rec_loss.item():.4f}, KL_loss: {KL_loss.item():.4f}, "
                   f"GradNorm: {grad_norm:.1f},time:{time.time() - start:.4f}")
-        nll_epoch.append(nll.item())
-        wandb.log({"Batch NLL": nll.item(),'node_loss': nodeloss.item(),'edge_pred_loss': edgeloss.item()}, commit=True)
+        nll_epoch.append(loss.item())
+        wandb.log({"Batch NLL": loss.item(), 'rec_loss': rec_loss.item(), 'KL_loss': KL_loss.item()},
+                  commit=True)
         if args.break_train_epoch:
             break
     wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
 
 
 def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms,
-                                    optim,nodes_dist, gradnorm_queue, dataset_info, prop_dist):
+                                    optim, nodes_dist, gradnorm_queue, dataset_info, prop_dist):
     model_dp.train()
     model.train()
     nll_epoch = []
@@ -149,21 +153,25 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
                   f"RegTerm: {reg_term.item():.1f}, "
                   f"GradNorm: {grad_norm:.1f}, abs_z: {mean_abs_z.item():.6f}")
         nll_epoch.append(nll.item())
-        wandb.log({"Batch NLL": nll.item(),'abs_z':mean_abs_z.item()}, commit=True)
+        wandb.log({"Batch NLL": nll.item(), 'abs_z': mean_abs_z.item()}, commit=True)
         if args.break_train_epoch:
             break
 
-    if epoch % args.visualize_epoch == 0 and epoch != 0:
+    if epoch % args.visualize_epoch == 0:
         start = time.time()
         if len(args.conditioning) > 0:
             save_and_sample_conditional(args, device, model_ema, prop_dist, dataset_info, epoch=epoch)
-        save_and_sample_chain(model_ema, args, device, dataset_info, prop_dist, epoch=epoch)
-        sample_different_sizes_and_save(model_ema, nodes_dist, args, device, dataset_info,
+        # save_and_sample_chain(model_ema, args, device, dataset_info, prop_dist, epoch=epoch)
+
+        # sample_different_sizes_and_save(model_ema, nodes_dist, args, device, dataset_info,
+        #                                 prop_dist, epoch=epoch)
+        # 暂时先用model_dp
+        sample_different_sizes_and_save(model_dp, nodes_dist, args, device, dataset_info,
                                         prop_dist, epoch=epoch)
         print(f'Sampling took {time.time() - start:.2f} seconds')
 
         vis.visualize(f"outputs/{args.exp_name}/epoch_{epoch}_", dataset_info=dataset_info, wandb=wandb)
-        vis.visualize_chain(f"outputs/{args.exp_name}/epoch_{epoch}_/chain/", dataset_info, wandb=wandb)
+        # vis.visualize_chain(f"outputs/{args.exp_name}/epoch_{epoch}_/chain/", dataset_info, wandb=wandb)
         if len(args.conditioning) > 0:
             vis.visualize_chain("outputs/%s/epoch_%d_/conditional/" % (args.exp_name, epoch), dataset_info,
                                 wandb=wandb, mode='conditional')
@@ -232,7 +240,7 @@ def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dt
                   f"RegTerm: {reg_term.item():.1f}, "
                   f"GradNorm: {grad_norm:.1f}")
         nll_epoch.append(nll.item())
-        wandb.log({"Batch NLL": nll.item(), 'abs_z':mean_abs_z.item()}, commit=True)
+        wandb.log({"Batch NLL": nll.item(), 'abs_z': mean_abs_z.item()}, commit=True)
         if args.break_train_epoch:
             break
 
@@ -287,16 +295,16 @@ def test_AE(args, loader, epoch, eval_model, device, dtype, property_norms, part
                 context = None
 
             # transform batch through flow
-            nodeloss, edgeloss = eval_model(x, h, node_mask, edge_mask)
+            rec_loss, kl_loss = eval_model(x, h, node_mask, edge_mask)
             # standard nll from forward KL
-            nll = nodeloss + edgeloss
+            nll = rec_loss + 1e-6*kl_loss
             # standard nll from forward KL
 
             nll_epoch += nll * batch_size
             n_samples += batch_size
             if i % args.n_report_steps == 0:
                 print(f"\r {partition} NLL \t epoch: {epoch}, iter: {i}/{n_iterations}, "
-                      f"NLL: {nll.item():.6f} \t node_loss: {nodeloss.item():.6f} \t edgeloss: {edgeloss.item():.6f}")
+                      f"NLL: {nll.item():.6f} \t node_loss: {rec_loss.item():.6f} \t KL_loss: {kl_loss.item():.6f}")
 
     return nll_epoch / n_samples
 
@@ -435,10 +443,9 @@ def analyze_and_save(epoch, model_sample, nodes_dist, args, device, dataset_info
     assert n_samples % batch_size == 0
     molecules = {'one_hot': [], 'x': [], 'node_mask': []}
     for i in range(int(n_samples / batch_size)):
-
         nodesxsample = nodes_dist.sample(batch_size)
         one_hot, _, x, node_mask = sample(args, device, model_sample, dataset_info, prop_dist,
-                                                nodesxsample=nodesxsample)
+                                          nodesxsample=nodesxsample)
 
         molecules['one_hot'].append(one_hot.detach().cpu())
         molecules['x'].append(x.detach().cpu())
@@ -452,6 +459,9 @@ def analyze_and_save(epoch, model_sample, nodes_dist, args, device, dataset_info
         wandb.log({'Validity': rdkit_tuple[0][0], 'Uniqueness': rdkit_tuple[0][1], 'Novelty': rdkit_tuple[0][2]})
 
     # model_sample.change_device(device_back)
+    # print('Validity:', rdkit_tuple[0][0], ' Uniqueness:', rdkit_tuple[0][1], 'Novelty:', rdkit_tuple[0][2],
+    #       'mol_stable:', validity_dict['mol_stable'], 'atm_stable:', validity_dict['atm_stable'])
+    print(validity_dict)
     return validity_dict
 
 

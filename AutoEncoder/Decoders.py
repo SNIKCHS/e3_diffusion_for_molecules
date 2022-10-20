@@ -20,6 +20,10 @@ class Decoder(nn.Module):
             nn.Linear(args.dim,args.max_z),
             # nn.Sigmoid()
         )
+        # self.out = nn.Sequential(
+        #     nn.Linear(args.hidden_dim, args.max_z),
+        #     # nn.Sigmoid()
+        # )
         self.pred_edge = args.pred_edge
         self.link_net = DenseAtt(args.dim,args.dropout)
         self.link_out = nn.Linear(args.dim,1)

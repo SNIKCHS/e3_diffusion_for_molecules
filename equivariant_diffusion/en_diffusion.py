@@ -987,7 +987,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         if self.training and self.loss_type == 'l2':
             SNR_weight = torch.ones_like(error)
-        else:  # 训练时计算真实的SNR
+        else:  # 验证时计算真实的SNR
             # Compute weighting with SNR: (SNR(s-t) - 1) for epsilon parametrization.
             SNR_weight = (self.SNR(gamma_s - gamma_t) - 1).squeeze(1).squeeze(1)
         assert error.size() == SNR_weight.size()
@@ -1034,8 +1034,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             assert kl_prior.size() == loss_term_0.size()
 
             loss = kl_prior + estimator_loss_terms + neg_log_constants + loss_term_0
-            print('loss:',loss.mean(0))
-            print('neg_log_constants:',neg_log_constants.mean(0))
+
 
         else:
             # Computes the L_0 term (even if gamma_t is not actually gamma_0)

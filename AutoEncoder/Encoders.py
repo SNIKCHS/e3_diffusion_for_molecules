@@ -1,5 +1,7 @@
 import torch
 from torch import nn
+
+from AutoEncoder.distributions import DiagonalGaussianDistribution
 from layers.hyp_layers import get_dim_act_curv, HNNLayer, HyperbolicGraphConvolution
 from layers.layers import get_dim_act, GraphConvolution, Linear
 import manifolds
@@ -27,6 +29,7 @@ class Encoder(nn.Module):
         else:
             n_atom_embed = args.dim - 1
         self.embedding = nn.Embedding(args.max_z, n_atom_embed, padding_idx=0)  # qm9 max_z=6
+        self.ln = nn.LayerNorm(args.dim)
 
     def forward(self, x, categories, charges, edges, node_mask, edge_mask):
         h = self.embedding(categories)  # (b,n_atom,n_atom_embed)
@@ -43,7 +46,10 @@ class Encoder(nn.Module):
         if self.manifold.name == 'Hyperboloid':
             o = torch.zeros((b * n_nodes, 1),device=h.device)
             h = torch.cat([o, h], dim=1)  # (b*n_atom,dim)
-        return self.encode(h, distances, edges, node_mask, edge_mask)
+
+        output, distances, edges, node_mask, edge_mask = self.encode(h, distances, edges, node_mask, edge_mask)
+        output = self.ln(output)
+        return output, distances, edges, node_mask, edge_mask
 
     def encode(self,h, distances, edges, node_mask, edge_mask):
         if self.massage_passing:
@@ -84,7 +90,6 @@ class HNN(Encoder):
         self.manifold = getattr(manifolds, args.manifold)()
         assert args.num_layers > 1
         dims, acts, self.curvatures = get_dim_act_curv(args)
-
         hnn_layers = []
         for i in range(args.num_layers):
             c_in, c_out = self.curvatures[i], self.curvatures[i + 1]

@@ -17,14 +17,14 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_AE_epoch, test_AE
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='AE_HGCN_8layers_128hid')
+parser.add_argument('--exp_name', type=str, default='AE_HGCN_encNorm')
 
-parser.add_argument('--n_epochs', type=int, default=200)
+parser.add_argument('--n_epochs', type=int, default=20)
 parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--lr', type=float, default=2e-4)
 parser.add_argument('--dropout', type=float, default=0)
 parser.add_argument('--dim', type=int, default=20)
-parser.add_argument('--num_layers', type=int, default=8)
+parser.add_argument('--num_layers', type=int, default=4)
 parser.add_argument('--ode_regularization', type=float, default=1e-3)
 parser.add_argument('--bias', type=int, default=1)
 parser.add_argument('--max_z', type=int, default=6)  # pad+5 types
@@ -46,16 +46,13 @@ parser.add_argument('--encdec_share_curvature', type=eval, default=False,
 parser.add_argument('--hidden_dim', type=int, default=128)
 
 
-parser.add_argument('--actnorm', type=eval, default=True,
-                    help='True | False')
 parser.add_argument('--break_train_epoch', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--dp', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--clip_grad', type=eval, default=True,
                     help='True | False')
-parser.add_argument('--trace', type=str, default='hutch',
-                    help='hutch | exact')
+
 # <-- EGNN args
 parser.add_argument('--dataset', type=str, default='qm9',
                     help='qm9 | qm9_second_half (train only on the last 50K samples of the training dataset)')
@@ -77,7 +74,7 @@ parser.add_argument('--generate_epochs', type=int, default=1,
                     help='save model')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of worker for the dataloader')
 parser.add_argument('--test_epochs', type=int, default=1)
-parser.add_argument('--data_augmentation', type=eval, default=False, help='use attention in the EGNN')
+parser.add_argument('--data_augmentation', type=eval, default=True, help='random rotate coordinate')
 parser.add_argument("--conditioning", nargs='+', default=[],
                     help='arguments : homo | lumo | alpha | gap | mu | Cv' )
 parser.add_argument('--resume', type=str, default=None,
@@ -88,19 +85,9 @@ parser.add_argument('--ema_decay', type=float, default=0.999,
                     help='Amount of EMA decay, 0 means off. A reasonable value'
                          ' is 0.999.')
 parser.add_argument('--augment_noise', type=float, default=0)
-parser.add_argument('--n_stability_samples', type=int, default=500,
-                    help='Number of samples to compute the stability')
-parser.add_argument('--normalize_factors', type=eval, default=[1, 4, 1],
-                    help='normalize factors for [x, categorical, integer]')
 parser.add_argument('--remove_h', action='store_true')
 parser.add_argument('--include_charges', type=eval, default=True,
                     help='include atom charge or not')
-parser.add_argument('--visualize_every_batch', type=int, default=1e8,
-                    help="Can be used to visualize multiple times per epoch")
-parser.add_argument('--normalization_factor', type=float, default=10,
-                    help="Normalize the sum aggregation of EGNN")
-parser.add_argument('--aggregation_method', type=str, default='sum',
-                    help='"sum" or "mean"')
 args = parser.parse_args()
 
 dataset_info = get_dataset_info(args.dataset, args.remove_h)
@@ -148,7 +135,7 @@ if args.no_wandb:
     mode = 'disabled'
 else:
     mode = 'online' if args.online else 'offline'
-kwargs = {'entity': args.wandb_usr, 'name': args.exp_name, 'project': 'e3_diffusion', 'config': args,
+kwargs = {'entity': args.wandb_usr, 'name': args.exp_name, 'project': 'AE', 'config': args,
           'settings': wandb.Settings(_disable_stats=True), 'reinit': True, 'mode': mode}
 wandb.init(**kwargs)
 wandb.save('*.txt')
@@ -242,7 +229,7 @@ def main():
         print(f"Epoch took {time.time() - start_epoch:.1f} seconds.")
 
         if epoch % args.test_epochs == 0:
-            nll_val = test_AE(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema_dp,
+            nll_val = test_AE(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema,
                            partition='Val', device=device, dtype=dtype, property_norms=property_norms)
             # nll_test = test(args=args, loader=dataloaders['test'], epoch=epoch, eval_model=model_ema_dp,
             #                 partition='Test', device=device, dtype=dtype,
@@ -251,7 +238,7 @@ def main():
             if nll_val < best_nll_val:
                 best_nll_val = nll_val
                 # best_nll_test = nll_test
-                if args.save_model:  # 覆盖最新的
+                if args.save_model:  # 保存当前最优
                     args.current_epoch = epoch + 1
                     utils.save_model(optim, 'outputs/%s/optim.npy' % args.exp_name)
                     utils.save_model(model, 'outputs/%s/AE.npy' % args.exp_name)
@@ -260,7 +247,7 @@ def main():
                     with open('outputs/%s/args.pickle' % args.exp_name, 'wb') as f:
                         pickle.dump(args, f)
 
-                if args.save_model:  # 当前轮
+                if args.save_model:  # 历史最优
                     utils.save_model(optim, 'outputs/%s/optim_%d.npy' % (args.exp_name, epoch))
                     utils.save_model(model, 'outputs/%s/AE_%d.npy' % (args.exp_name, epoch))
                     if args.ema_decay > 0:
