@@ -26,7 +26,7 @@ from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiff
     save_and_sample_chain, sample_different_sizes_and_save
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='AE_Diffusion_HGCN_encnorm')
+parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_encnorm')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
@@ -100,7 +100,7 @@ parser.add_argument('--generate_epochs', type=int, default=1,
                     help='save model')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of worker for the dataloader')
 parser.add_argument('--test_epochs', type=int, default=1)
-parser.add_argument('--data_augmentation', type=eval, default=False, help='use attention in the EGNN')
+parser.add_argument('--data_augmentation', type=eval, default=True, help='')
 parser.add_argument("--conditioning", nargs='+', default=[],
                     help='arguments : homo | lumo | alpha | gap | mu | Cv' )
 parser.add_argument('--resume', type=str, default=None,
@@ -205,8 +205,8 @@ else:
 args.context_node_nf = context_node_nf
 
 
-AE_state_dict = torch.load('outputs/AE_HGCN_encNorm/AE.npy')
-with open('outputs/AE_HGCN_encNorm/args.pickle', 'rb') as f:
+AE_state_dict = torch.load('outputs/AE_HGCN/AE.npy')
+with open('outputs/AE_HGCN/args.pickle', 'rb') as f:
     AE_args = pickle.load(f)
 
 AutoEncoder = HyperbolicAE(AE_args)

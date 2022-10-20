@@ -1,3 +1,5 @@
+import math
+
 import torch
 import AutoEncoder.Decoders as Decoders
 import AutoEncoder.Encoders as Encoders
@@ -18,13 +20,13 @@ class HyperbolicAE(nn.Module):
         self._edges_dict = {}
         self.pred_edge = args.pred_edge
 
+
     def forward(self, x, h, node_mask, edge_mask):
         # note：将来使用EnVariationalDiffusion的normalize
         categories, charges = h  # (b,n_atom)
         batch_size, n_nodes = categories.shape
         edges = self.get_adj_matrix(n_nodes,batch_size)  # [rows, cols] rows=cols=(batch_size*n_nodes*n_nodes) value in [0,batch_size*n_nodes)
         h, distances, edges, node_mask, edge_mask = self.encoder(x, categories, charges, edges, node_mask, edge_mask)
-        # h += 0.5*torch.randn(h.size(),device=h.device)
         output,_ = self.decoder.decode(h, distances, edges, node_mask, edge_mask)
 
         return self.compute_loss(categories, output)
@@ -41,8 +43,6 @@ class HyperbolicAE(nn.Module):
         n_type = x_hat.size(-1)
         atom_loss_f = nn.CrossEntropyLoss(reduction='sum')
         rec_loss = atom_loss_f(x_hat.view(-1, n_type), x.view(-1))/b
-        # print(x[0])
-        # print(torch.argmax(x_hat.view(b,n_atom, n_type)[0],dim=1))
 
         # if self.pred_edge:
         #     edge_loss_f = nn.MSELoss(reduction='mean')

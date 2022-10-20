@@ -20,7 +20,6 @@ class DenseAtt(nn.Module):
             nn.SiLU(),
             nn.Dropout(self.dropout),
             nn.Linear(2 * in_features, in_features, bias=True),
-            nn.SiLU(),
         )
         self.att_mlp = nn.Sequential(
             nn.Linear(in_features, 1),

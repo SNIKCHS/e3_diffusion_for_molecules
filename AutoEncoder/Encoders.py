@@ -1,11 +1,9 @@
 import torch
 from torch import nn
 
-from AutoEncoder.distributions import DiagonalGaussianDistribution
 from layers.hyp_layers import get_dim_act_curv, HNNLayer, HyperbolicGraphConvolution
 from layers.layers import get_dim_act, GraphConvolution, Linear
 import manifolds
-import torch.nn.functional as F
 
 
 def coord2diff(x, edge_index, norm_constant=1):

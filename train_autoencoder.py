@@ -17,9 +17,9 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_AE_epoch, test_AE
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='AE_HGCN_encNorm')
+parser.add_argument('--exp_name', type=str, default='AE_HGCN')
 
-parser.add_argument('--n_epochs', type=int, default=20)
+parser.add_argument('--n_epochs', type=int, default=1000)
 parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--lr', type=float, default=2e-4)
 parser.add_argument('--dropout', type=float, default=0)
@@ -35,7 +35,7 @@ parser.add_argument('--manifold', type=str, default='Hyperboloid',
                     help='Euclidean, Hyperboloid, PoincareBall')
 parser.add_argument('--c', type=float, default=None)
 parser.add_argument('--act', type=str, default='silu',
-                    help='relu,silu,selu,leaky_relu')
+                    help='relu,silu,leaky_relu')
 parser.add_argument('--local_agg', type=int, default=1)
 parser.add_argument('--lr_scheduler', type=eval, default=False,
                     help='True | False')
@@ -145,14 +145,6 @@ wandb.save('*.txt')
 dataloaders, charge_scale = dataset.retrieve_dataloaders(args)
 
 data_dummy = next(iter(dataloaders['train']))
-# print(data_dummy['one_hot'].shape) # [128, 25, 5] 只有5种原子 H,C,O,N,F padding是全false
-# print(data_dummy['edge_mask']) (b*n_atom*n_atom,1) atom_mask.unsqueeze(1) * atom_mask.unsqueeze(2) i*i=0  defined in qm9/data/collate.py
-# print(data_dummy['atom_mask'].shape) (b,n_atom)
-
-#dict_keys(['num_atoms', 'charges', 'positions', 'index', 'A', 'B', 'C', 'mu', 'alpha', 'homo', 'lumo',
-# 'gap', 'r2', 'zpve', 'U0', 'U', 'H', 'G', 'Cv', 'omega1', 'zpve_thermo', 'U0_thermo', 'U_thermo', 'H_thermo',
-# 'G_thermo', 'Cv_thermo', 'one_hot', 'atom_mask', 'edge_mask'])
-
 
 if len(args.conditioning) > 0:
     print(f'Conditioning on {args.conditioning}')
@@ -229,7 +221,7 @@ def main():
         print(f"Epoch took {time.time() - start_epoch:.1f} seconds.")
 
         if epoch % args.test_epochs == 0:
-            nll_val = test_AE(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema,
+            nll_val = test_AE(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema_dp,
                            partition='Val', device=device, dtype=dtype, property_norms=property_norms)
             # nll_test = test(args=args, loader=dataloaders['test'], epoch=epoch, eval_model=model_ema_dp,
             #                 partition='Test', device=device, dtype=dtype,
@@ -239,6 +231,7 @@ def main():
                 best_nll_val = nll_val
                 # best_nll_test = nll_test
                 if args.save_model:  # 保存当前最优
+                    print('save model')
                     args.current_epoch = epoch + 1
                     utils.save_model(optim, 'outputs/%s/optim.npy' % args.exp_name)
                     utils.save_model(model, 'outputs/%s/AE.npy' % args.exp_name)
