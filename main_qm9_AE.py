@@ -26,7 +26,7 @@ from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiff
     save_and_sample_chain, sample_different_sizes_and_save
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN')
+parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_nohgcl')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
@@ -55,12 +55,12 @@ parser.add_argument('--dp', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--condition_time', type=eval, default=True,
                     help='True | False')
-parser.add_argument('--clip_grad', type=eval, default=False,
+parser.add_argument('--clip_grad', type=eval, default=True,
                     help='True | False')
 parser.add_argument('--trace', type=str, default='hutch',
                     help='hutch | exact')
 # EGNN args -->
-parser.add_argument('--hyp', type=eval, default=True,
+parser.add_argument('--hyp', type=eval, default=False,
                     help='use hyperbolic gcl')
 parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
@@ -90,7 +90,7 @@ parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
 parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
+parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -99,7 +99,7 @@ parser.add_argument('--save_model', type=eval, default=True,
 parser.add_argument('--generate_epochs', type=int, default=1,
                     help='save model')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of worker for the dataloader')
-parser.add_argument('--test_epochs', type=int, default=1)
+parser.add_argument('--test_epochs', type=int, default=10)
 parser.add_argument('--data_augmentation', type=eval, default=True, help='')
 parser.add_argument("--conditioning", nargs='+', default=[],
                     help='arguments : homo | lumo | alpha | gap | mu | Cv' )
@@ -118,7 +118,7 @@ parser.add_argument('--normalize_factors', type=eval, default=[1, 4, 1],
 parser.add_argument('--remove_h', action='store_true')
 parser.add_argument('--include_charges', type=eval, default=True,
                     help='include atom charge or not')
-parser.add_argument('--visualize_epoch', type=int, default=5,
+parser.add_argument('--visualize_epoch', type=int, default=10,
                     help="Can be used to visualize multiple times per epoch")
 parser.add_argument('--normalization_factor', type=float, default=1,
                     help="Normalize the sum aggregation of EGNN")
@@ -205,15 +205,14 @@ else:
 args.context_node_nf = context_node_nf
 
 
-AE_state_dict = torch.load('outputs/AE_HGCN_dropout/AE.npy')
-with open('outputs/AE_HGCN_dropout/args.pickle', 'rb') as f:
+AE_state_dict = torch.load('outputs/AE_HGCN_dropout_noclip/AE_ema.npy')
+with open('outputs/AE_HGCN_dropout_noclip/args.pickle', 'rb') as f:
     AE_args = pickle.load(f)
-
+AE_args.dropout = 0
 AutoEncoder = HyperbolicAE(AE_args)
 AutoEncoder.load_state_dict(AE_state_dict)
 Encoder = AutoEncoder.encoder
 Decoder = AutoEncoder.decoder
-
 
 # Create EGNN flow
 model, nodes_dist, prop_dist = get_model(args, device, dataset_info, dataloaders['train'],encoder=Encoder,decoder=Decoder)  # model=EnVariationalDiffusion 包含EGNN_dynamics_QM9

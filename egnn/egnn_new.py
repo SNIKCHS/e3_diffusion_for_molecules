@@ -91,6 +91,8 @@ class HGCL(nn.Module):
             self.manifold.logmap0(output, self.c_out),
             c=self.c_out
         )
+        if node_mask is not None:
+            output = output * node_mask
         return output, None
 
 class EquivariantUpdate(nn.Module):

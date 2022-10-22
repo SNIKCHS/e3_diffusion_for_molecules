@@ -47,6 +47,8 @@ class Encoder(nn.Module):
 
         output, distances, edges, node_mask, edge_mask = self.encode(h, distances, edges, node_mask, edge_mask)
         output = self.ln(output)
+        output = output * node_mask
+
         return output, distances, edges, node_mask, edge_mask
 
     def encode(self,h, distances, edges, node_mask, edge_mask):

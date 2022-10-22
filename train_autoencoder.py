@@ -17,7 +17,7 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_AE_epoch, test_AE
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='AE_HGCN_dropout_noclipgrad')
+parser.add_argument('--exp_name', type=str, default='AE_HGCN_dropout_noclip')
 
 parser.add_argument('--n_epochs', type=int, default=1000)
 parser.add_argument('--batch_size', type=int, default=128)
@@ -44,8 +44,6 @@ parser.add_argument('--pred_edge', type=eval, default=False,
 parser.add_argument('--encdec_share_curvature', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--hidden_dim', type=int, default=128)
-
-
 parser.add_argument('--break_train_epoch', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--dp', type=eval, default=False,
@@ -64,7 +62,7 @@ parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
 parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
+parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -73,7 +71,7 @@ parser.add_argument('--save_model', type=eval, default=True,
 parser.add_argument('--generate_epochs', type=int, default=1,
                     help='save model')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of worker for the dataloader')
-parser.add_argument('--test_epochs', type=int, default=1)
+parser.add_argument('--test_epochs', type=int, default=2)
 parser.add_argument('--data_augmentation', type=eval, default=True, help='random rotate coordinate')
 parser.add_argument("--conditioning", nargs='+', default=[],
                     help='arguments : homo | lumo | alpha | gap | mu | Cv' )

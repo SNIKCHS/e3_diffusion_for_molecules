@@ -159,7 +159,7 @@ class HypAgg(Module):
         self.att = DenseAtt(in_features, dropout,edge_dim=edge_dim)
         self.node_mlp = nn.Sequential(
             nn.Linear(2 * in_features, in_features),
-            nn.ReLU(),
+            nn.SiLU(),
             nn.Linear(in_features, in_features))
 
     def forward(self, x, distances, edges, node_mask, edge_mask):

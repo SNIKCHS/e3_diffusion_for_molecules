@@ -157,6 +157,9 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
         if args.break_train_epoch:
             break
 
+    # sample_different_sizes_and_save(model_dp, nodes_dist, args, device, dataset_info,
+    #                                 prop_dist, epoch=epoch)
+    # vis.visualize(f"outputs/{args.exp_name}/epoch_{epoch}_", dataset_info=dataset_info, wandb=wandb)
     if epoch % args.visualize_epoch == 0 and epoch!=0:
         start = time.time()
         if len(args.conditioning) > 0:
