@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from layers.hyp_layers import get_dim_act_curv, HNNLayer, HyperbolicGraphConvolution
+from layers.hyp_layers import get_dim_act_curv, HNNLayer, HyperbolicGraphConvolution,HypNorm
 from layers.layers import get_dim_act, GraphConvolution, Linear
 import manifolds
 
@@ -27,7 +27,7 @@ class Encoder(nn.Module):
         else:
             n_atom_embed = args.dim - 1
         self.embedding = nn.Embedding(args.max_z, n_atom_embed, padding_idx=0)  # qm9 max_z=6
-        self.ln = nn.LayerNorm(args.dim)
+
 
     def forward(self, x, categories, charges, edges, node_mask, edge_mask):
         h = self.embedding(categories)  # (b,n_atom,n_atom_embed)
@@ -38,21 +38,20 @@ class Encoder(nn.Module):
         node_mask = node_mask.view(b * n_nodes, 1)
         edge_mask = edge_mask.view(b * n_nodes * n_nodes, 1)
 
-        h = h.view(b * n_nodes, -1).clone() * node_mask  # (b*n_atom,n_atom_embed+1)
+        h = h.view(b * n_nodes, -1) * node_mask  # (b*n_atom,n_atom_embed+1)
         distances, _ = coord2diff(x, edges)  # (b*n_node*n_node,1)
-
         if self.manifold.name == 'Hyperboloid':
             o = torch.zeros((b * n_nodes, 1),device=h.device)
             h = torch.cat([o, h], dim=1)  # (b*n_atom,dim)
 
         output, distances, edges, node_mask, edge_mask = self.encode(h, distances, edges, node_mask, edge_mask)
-        output = self.ln(output)
+        output = self.norm(output)
         output = output * node_mask
 
         return output, distances, edges, node_mask, edge_mask
 
     def encode(self,h, distances, edges, node_mask, edge_mask):
-        if self.massage_passing:
+        if self.message_passing:
             input = (h, distances, edges, node_mask, edge_mask)
             output, distances, edges, node_mask, edge_mask = self.layers(input)
         else:
@@ -76,7 +75,8 @@ class MLP(Encoder):
             act = acts[i]
             layers.append(Linear(in_dim, out_dim, args.dropout, act, args.bias))
         self.layers = nn.Sequential(*layers)
-        self.massage_passing = False
+        self.message_passing = False
+        self.norm = nn.LayerNorm(args.dim)
 
 
 class HNN(Encoder):
@@ -99,7 +99,8 @@ class HNN(Encoder):
                 HNNLayer(self.manifold, in_dim, out_dim, c_in, c_out, args.dropout, act, args.bias)
             )
         self.layers = nn.Sequential(*hnn_layers)
-        self.massage_passing = False
+        self.message_passing = False
+        self.norm = HypNorm(self.manifold, args.dim, self.curvatures[-1])
 
     def encode(self, h, distances, edges, node_mask, edge_mask):
         h_hyp = self.manifold.proj(
@@ -111,10 +112,10 @@ class HNN(Encoder):
 
         output, distances, edges, node_mask, edge_mask = super(HNN, self).encode( h_hyp, distances, edges, node_mask, edge_mask)
 
-        output = self.manifold.proj_tan0(
-            self.manifold.logmap0(output, self.curvatures[-1]),
-            c=self.curvatures[-1]
-        )
+        # output = self.manifold.proj_tan0(
+        #     self.manifold.logmap0(output, self.curvatures[-1]),
+        #     c=self.curvatures[-1]
+        # )
         return output, distances, edges, node_mask, edge_mask
 
 
@@ -134,7 +135,8 @@ class GCN(Encoder):
             act = acts[i]
             gc_layers.append(GraphConvolution(in_dim, out_dim, args.dropout, act, args.bias))
         self.layers = nn.Sequential(*gc_layers)
-        self.massage_passing = True
+        self.message_passing = True
+        self.norm = nn.LayerNorm(args.dim)
 
 
 class HGCN(Encoder):
@@ -158,7 +160,8 @@ class HGCN(Encoder):
                 )
             )
         self.layers = nn.Sequential(*hgc_layers)
-        self.massage_passing = True
+        self.message_passing = True
+        self.norm = HypNorm(self.manifold, args.dim, self.curvatures[-1])
 
     def encode(self, h, distances, edges, node_mask, edge_mask):
         h_hyp = self.manifold.proj(
@@ -170,9 +173,9 @@ class HGCN(Encoder):
 
         output, distances, edges, node_mask, edge_mask = super(HGCN, self).encode(h_hyp, distances, edges, node_mask, edge_mask)
 
-        output = self.manifold.proj_tan0(
-            self.manifold.logmap0(output, self.curvatures[-1]),
-            c=self.curvatures[-1]
-        )
+        # output = self.manifold.proj_tan0(
+        #     self.manifold.logmap0(output, self.curvatures[-1]),
+        #     c=self.curvatures[-1]
+        # )
         return output, distances, edges, node_mask, edge_mask
 

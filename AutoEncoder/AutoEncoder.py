@@ -29,9 +29,9 @@ class HyperbolicAE(nn.Module):
         h, distances, edges, node_mask, edge_mask = self.encoder(x, categories, charges, edges, node_mask, edge_mask)
         output,_ = self.decoder.decode(h, distances, edges, node_mask, edge_mask)
 
-        return self.compute_loss(categories, output)
+        return self.compute_loss(categories, output,node_mask)
 
-    def compute_loss(self, x, x_hat):
+    def compute_loss(self, x, x_hat,node_mask):
         """
         auto-encoder的损失
         :param x: encoder的输入 原子类别（0~5）
@@ -41,9 +41,10 @@ class HyperbolicAE(nn.Module):
         b,n_atom = x.size()
 
         n_type = x_hat.size(-1)
-        atom_loss_f = nn.CrossEntropyLoss(reduction='sum')
-        rec_loss = atom_loss_f(x_hat.view(-1, n_type), x.view(-1))/b
-
+        atom_loss_f = nn.CrossEntropyLoss(reduction='none')
+        # rec_loss = atom_loss_f(x_hat.view(-1, n_type), x.view(-1))/b
+        rec_loss = atom_loss_f(x_hat.view(-1, n_type), x.view(-1)) * node_mask.squeeze()
+        rec_loss = rec_loss.sum()/b
         # if self.pred_edge:
         #     edge_loss_f = nn.MSELoss(reduction='mean')
         #     zeros = torch.zeros_like(edge,device=edge.device)
