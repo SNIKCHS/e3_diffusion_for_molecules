@@ -42,11 +42,15 @@ class HNNLayer(nn.Module):
 
     def __init__(self, manifold, in_features, out_features, c_in, c_out, dropout, act, use_bias):
         super(HNNLayer, self).__init__()
+
+        self.norm = HypNorm(manifold, in_features,c_in)
         self.linear = HypLinear(manifold, in_features, out_features, c_in, dropout, use_bias)
         self.hyp_act = HypAct(manifold, c_in, c_out, act)
 
+
     def forward(self, h):
         # print('h:', torch.any(torch.isnan(h)).item())
+        h = self.norm(h)
         h = self.linear.forward(h)
         # print('linear:', torch.any(torch.isnan(h)).item())
         h = self.hyp_act.forward(h)
@@ -61,12 +65,14 @@ class HyperbolicGraphConvolution(nn.Module):
 
     def __init__(self, manifold, in_features, out_features, c_in, c_out, dropout, act, use_bias, local_agg,edge_dim=1):
         super(HyperbolicGraphConvolution, self).__init__()
+        self.norm = HypNorm(manifold, in_features,c_in)
         self.linear = HypLinear(manifold, in_features, out_features, c_in, dropout, use_bias)
         self.agg = HypAgg(manifold, c_in, out_features, dropout, local_agg=local_agg,edge_dim=edge_dim)
         self.hyp_act = HypAct(manifold, c_in, c_out, act)
 
     def forward(self, input):
         h, distances, edges, node_mask, edge_mask = input
+        h = self.norm(h)
 
         h = self.linear.forward(h)
         # print('linear:', torch.any(torch.isnan(h)).item())
@@ -96,19 +102,16 @@ class HypLinear(nn.Module):
         self.use_bias = use_bias
         self.bias = nn.Parameter(torch.Tensor(1, out_features))
         self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
-        self.ln = nn.LayerNorm(in_features)  # LayerNorm,InstanceNorm1d also work
+
         self.reset_parameters()
 
     def reset_parameters(self):
-        init.xavier_uniform_(self.weight, gain=math.sqrt(2))
+        init.xavier_uniform_(self.weight, gain=0.25)
         init.constant_(self.bias, 0)
 
     def forward(self, x):
-        x = self.ln(x)
-        x = self.manifold.proj(x, self.c)
         drop_weight = F.dropout(self.weight, self.dropout, training=self.training)
         mv = self.manifold.mobius_matvec(drop_weight, x, self.c)  # x先log到切空间与drop_weight相乘再exp到manifold
-
         res = self.manifold.proj(mv, self.c)
 
         if self.use_bias:
@@ -142,6 +145,8 @@ def unsorted_segment_sum(data, segment_ids, num_segments, normalization_factor, 
         norm[norm == 0] = 1
         result = result / norm
     return result
+
+
 class HypAgg(Module):
     """
     Hyperbolic aggregation layer.
@@ -161,6 +166,7 @@ class HypAgg(Module):
             nn.Linear(2 * in_features, in_features),
             nn.SiLU(),
             nn.Linear(in_features, in_features))
+
 
     def forward(self, x, distances, edges, node_mask, edge_mask):
         x_tangent = self.manifold.logmap0(x, c=self.c)  # (b*n_node,dim)
@@ -221,3 +227,20 @@ class HypAct(Module):
         return 'c_in={}, c_out={}'.format(
             self.c_in, self.c_out
         )
+
+
+class HypNorm(nn.Module):
+
+    def __init__(self, manifold, in_features, c):
+        super(HypNorm, self).__init__()
+        self.manifold = manifold
+        self.in_features = in_features
+        self.c = c
+        self.ln = nn.LayerNorm(in_features)
+
+    def forward(self, h):
+        h = self.manifold.logmap0(h, self.c)
+        h = self.ln(h)
+        h = self.manifold.proj_tan0(h, c=self.c)
+        h = self.manifold.expmap0(h, c=self.c)
+        return h
