@@ -10,7 +10,7 @@ class EGNN_dynamics_QM9(nn.Module):
                  n_dims, hidden_nf=64, device='cpu',
                  act_fn=torch.nn.SiLU(), n_layers=4, attention=False,
                  condition_time=True, tanh=False, mode='egnn_dynamics', norm_constant=0,
-                 inv_sublayers=2, sin_embedding=False, normalization_factor=100, aggregation_method='sum',hyp=False):
+                 inv_sublayers=2, sin_embedding=False, normalization_factor=100, aggregation_method='sum',hyp=False,c=None):
         super().__init__()
         self.mode = mode
         if mode == 'egnn_dynamics':
@@ -20,7 +20,7 @@ class EGNN_dynamics_QM9(nn.Module):
                 n_layers=n_layers, attention=attention, tanh=tanh, norm_constant=norm_constant,
                 inv_sublayers=inv_sublayers, sin_embedding=sin_embedding,
                 normalization_factor=normalization_factor,
-                aggregation_method=aggregation_method,hyp=hyp)
+                aggregation_method=aggregation_method,hyp=hyp,c=c)
             self.in_node_nf = in_node_nf
         elif mode == 'gnn_dynamics':
             self.gnn = GNN(
@@ -78,7 +78,9 @@ class EGNN_dynamics_QM9(nn.Module):
             # We're conditioning, awesome!
             context = context.view(bs*n_nodes, self.context_node_nf)
             h = torch.cat([h, context], dim=1)
-
+        if torch.any(torch.isnan(h)):
+            print('Warning: detected nan, resetting h to zero.')
+            h = torch.where(torch.isnan(h), torch.full_like(h, 0), h)
         if self.mode == 'egnn_dynamics':
 
             h_final, x_final = self.egnn(h, x, edges, node_mask=node_mask, edge_mask=edge_mask)
@@ -100,11 +102,12 @@ class EGNN_dynamics_QM9(nn.Module):
             # Slice off last dimension which represented time.
             h_final = h_final[:, :-1]
 
+
         vel = vel.view(bs, n_nodes, -1)
 
         if torch.any(torch.isnan(vel)):
             print('Warning: detected nan, resetting EGNN output to zero.')
-            vel = torch.zeros_like(vel)
+            vel = torch.where(torch.isnan(vel), torch.full_like(vel, 0), vel)
 
         if node_mask is None:
             vel = remove_mean(vel)

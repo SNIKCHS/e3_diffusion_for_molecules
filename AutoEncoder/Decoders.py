@@ -131,14 +131,10 @@ class HGCNDecoder(Decoder):
         self.decode_adj = True
 
     def decode(self, h, distances, edges, node_mask, edge_mask):
-
-        # h = self.manifold.proj(
-        #     self.manifold.expmap0(
-        #         self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
-        #     ),
-        #     c=self.curvatures[0]
-        # )
-        h = self.manifold.proj(h,c=self.curvatures[0])
+        h = self.manifold.expmap0(
+                self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
+            )
+        # h = self.manifold.proj(h,c=self.curvatures[0])
         output = super(HGCNDecoder, self).decode(h, distances, edges, node_mask, edge_mask)
 
         return output
@@ -179,12 +175,11 @@ class HNNDecoder(Decoder):
         self.decode_adj = False
 
     def decode(self, h, distances, edges, node_mask, edge_mask):
-        # h_hyp = self.manifold.proj(
-        #     self.manifold.expmap0(
-        #         self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
-        #     ),
-        #     c=self.curvatures[0]
-        # )
+        h_hyp = self.manifold.expmap0(
+                self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
+            )
+        # h_hyp = self.manifold.proj(h_hyp,c=self.curvatures[0])
+        h = self.manifold.proj(h_hyp, c=self.curvatures[0])
         output = super(HNNDecoder, self).decode(h, distances, edges, node_mask, edge_mask)
 
         return output

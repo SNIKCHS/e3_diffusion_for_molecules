@@ -26,7 +26,7 @@ from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiff
     save_and_sample_chain, sample_different_sizes_and_save
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_nohgcl')
+parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_kl_nolocal')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
@@ -60,7 +60,7 @@ parser.add_argument('--clip_grad', type=eval, default=True,
 parser.add_argument('--trace', type=str, default='hutch',
                     help='hutch | exact')
 # EGNN args -->
-parser.add_argument('--hyp', type=eval, default=False,
+parser.add_argument('--hyp', type=eval, default=True,
                     help='use hyperbolic gcl')
 parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
@@ -70,7 +70,7 @@ parser.add_argument('--nf', type=int, default=256,
                     help='dim of EGNN hidden feature')
 parser.add_argument('--dim', type=int, default=20,
                     help='dim of encoder output')
-parser.add_argument('--tanh', type=eval, default=True,
+parser.add_argument('--tanh', type=eval, default=False,
                     help='use tanh in the coord_mlp')
 parser.add_argument('--attention', type=eval, default=True,
                     help='use attention in the EGNN')
@@ -90,7 +90,7 @@ parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
 parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
+parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -99,7 +99,7 @@ parser.add_argument('--save_model', type=eval, default=True,
 parser.add_argument('--generate_epochs', type=int, default=1,
                     help='save model')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of worker for the dataloader')
-parser.add_argument('--test_epochs', type=int, default=10)
+parser.add_argument('--test_epochs', type=int, default=2)
 parser.add_argument('--data_augmentation', type=eval, default=True, help='')
 parser.add_argument("--conditioning", nargs='+', default=[],
                     help='arguments : homo | lumo | alpha | gap | mu | Cv' )
@@ -205,8 +205,8 @@ else:
 args.context_node_nf = context_node_nf
 
 
-AE_state_dict = torch.load('outputs/AE_HGCN_dropout_noclip/AE_ema.npy')
-with open('outputs/AE_HGCN_dropout_noclip/args.pickle', 'rb') as f:
+AE_state_dict = torch.load('outputs/AE_HGCN_kl/AE_ema.npy')
+with open('outputs/AE_HGCN_kl/args.pickle', 'rb') as f:
     AE_args = pickle.load(f)
 AE_args.dropout = 0
 AutoEncoder = HyperbolicAE(AE_args)
@@ -220,8 +220,14 @@ if prop_dist is not None:
     prop_dist.set_normalizer(property_norms)
 model = model.to(device)
 
-optim = get_optim(args, model)
-# print(model)
+for name, param in model.named_parameters():
+    if "Decoder" in name or 'Encoder' in name:
+        param.requires_grad = False
+
+optim = torch.optim.AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=args.lr, amsgrad=True,
+        weight_decay=1e-12)
 
 gradnorm_queue = utils.Queue()
 gradnorm_queue.add(3000)  # Add large value that will be flushed.
@@ -239,8 +245,9 @@ def main():
     #     optim_state_dict = torch.load(join(args.resume, 'optim.npy'))
     #     model.load_state_dict(flow_state_dict)
     #     optim.load_state_dict(optim_state_dict)
-    # flow_state_dict = torch.load('outputs/AE_Diffusion_HNN_noise/generative_model.npy')
-    # optim_state_dict = torch.load('outputs/AE_Diffusion/optim_10.npy')
+    # args.start_epoch = 33
+    # flow_state_dict = torch.load('outputs/Diffusion_AE_HGCN_kl/generative_model_32.npy')
+    # optim_state_dict = torch.load('outputs/Diffusion_AE_HGCN_kl/optim.npy')
     # model.load_state_dict(flow_state_dict,False)
     # optim.load_state_dict(optim_state_dict)
 
@@ -282,10 +289,6 @@ def main():
     # analyze_and_save(args=args, epoch=15, model_sample=model_ema, nodes_dist=nodes_dist,
     #                  dataset_info=dataset_info, device=device,
     #                  prop_dist=prop_dist, n_samples=args.n_stability_samples)
-    # # wandb: atm_stable
-    # # 0.51561
-    # # wandb: mol_stable
-    # # 0.0
     # exit(0)
     for epoch in range(args.start_epoch, args.n_epochs):
         start_epoch = time.time()

@@ -25,13 +25,19 @@ def get_model(args, device, dataset_info, dataloader_train, encoder=None, decode
         print('Warning: dynamics model is _not_ conditioned on time.')
         dynamics_in_node_nf = in_node_nf
 
+    if encoder is not None and hasattr(encoder,'curvatures') :
+        # c = encoder.curvatures[-1]
+        c = torch.tensor(encoder.curvatures[-1].clone(),device=device,requires_grad=False)
+    else:
+        c = None
+
     net_dynamics = EGNN_dynamics_QM9(
         in_node_nf=dynamics_in_node_nf, context_node_nf=args.context_node_nf,
         n_dims=3, device=device, hidden_nf=args.nf,
         act_fn=torch.nn.SiLU(), n_layers=args.n_layers,
         attention=args.attention, tanh=args.tanh, mode=args.model, norm_constant=args.norm_constant,
         inv_sublayers=args.inv_sublayers, sin_embedding=args.sin_embedding,
-        normalization_factor=args.normalization_factor, aggregation_method=args.aggregation_method,hyp=args.hyp)
+        normalization_factor=args.normalization_factor, aggregation_method=args.aggregation_method,hyp=args.hyp,c=c)
 
     if args.probabilistic_model == 'diffusion':
         vdm = EnVariationalDiffusion(

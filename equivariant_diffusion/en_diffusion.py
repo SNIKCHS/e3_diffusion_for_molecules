@@ -900,7 +900,8 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         categories, charges = h
         batch_size, n_nodes = categories.shape
         edges = self.get_adj_matrix(n_nodes, batch_size)
-        h, distances, edges, _, _ = self.Encoder(x, categories, charges, edges, node_mask, edge_mask)
+        posterior, distances, edges, _, _ = self.Encoder(x, categories, charges, edges, node_mask, edge_mask)
+        h = posterior.mode()
         h = h.view(batch_size, n_nodes, -1)
         # Reset delta_log_px if not vlb objective.
         if self.training and self.loss_type == 'l2':
@@ -973,7 +974,6 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         # Concatenate x, h.
         xh = torch.cat([x, h], dim=2)  # (b,n_nodes,3+dim)
-
         # Sample z_t given x, h for timestep t, from q(z_t | x, h)
         z_t = alpha_t * xh + sigma_t * eps
         """去噪过程"""
@@ -981,8 +981,12 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         # Neural net prediction. 拟合噪声
         net_out = self.phi(z_t, t, node_mask, edge_mask, context, edge)
+        # print('t:',t[0,0])
 
+        # print('eps:', eps[0,0])
+        # print('net_out:', net_out[0,0])
         # Compute the error.
+
         error = self.compute_error(net_out, gamma_t, eps)
 
         if self.training and self.loss_type == 'l2':
@@ -1074,6 +1078,9 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         sigma_t = self.sigma(gamma_t, target_tensor=zt)
 
         # Neural net prediction.
+
+
+
         eps_t = self.phi(zt, t, node_mask, edge_mask, context)
 
 

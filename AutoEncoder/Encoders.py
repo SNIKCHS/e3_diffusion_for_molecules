@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+from AutoEncoder.distributions import DiagonalGaussianDistribution
 from layers.hyp_layers import get_dim_act_curv, HNNLayer, HyperbolicGraphConvolution,HypNorm
 from layers.layers import get_dim_act, GraphConvolution, Linear
 import manifolds
@@ -27,6 +28,7 @@ class Encoder(nn.Module):
         else:
             n_atom_embed = args.dim - 1
         self.embedding = nn.Embedding(args.max_z, n_atom_embed, padding_idx=0)  # qm9 max_z=6
+        self.mean_logvar = nn.Linear(args.dim,2*args.dim)
 
 
     def forward(self, x, categories, charges, edges, node_mask, edge_mask):
@@ -45,10 +47,16 @@ class Encoder(nn.Module):
             h = torch.cat([o, h], dim=1)  # (b*n_atom,dim)
 
         output, distances, edges, node_mask, edge_mask = self.encode(h, distances, edges, node_mask, edge_mask)
-        output = self.norm(output)
-        output = output * node_mask
+        parameters = self.mean_logvar(output)
+        posterior = DiagonalGaussianDistribution(parameters,self.manifold,node_mask)
+        # if self.manifold.name == 'Hyperboloid':
+        #     output[..., 1:] = self.norm(output[..., 1:].clone())
+        # else:
+        #     output = self.norm(output)
 
-        return output, distances, edges, node_mask, edge_mask
+        # output = output * node_mask
+
+        return posterior, distances, edges, node_mask, edge_mask
 
     def encode(self,h, distances, edges, node_mask, edge_mask):
         if self.message_passing:
@@ -100,7 +108,10 @@ class HNN(Encoder):
             )
         self.layers = nn.Sequential(*hnn_layers)
         self.message_passing = False
-        self.norm = HypNorm(self.manifold, args.dim, self.curvatures[-1])
+        if self.manifold.name == 'Hyperboloid':
+            self.norm = nn.LayerNorm(args.dim - 1)
+        else:
+            self.norm = nn.LayerNorm(args.dim)
 
     def encode(self, h, distances, edges, node_mask, edge_mask):
         h_hyp = self.manifold.proj(
@@ -112,10 +123,10 @@ class HNN(Encoder):
 
         output, distances, edges, node_mask, edge_mask = super(HNN, self).encode( h_hyp, distances, edges, node_mask, edge_mask)
 
-        # output = self.manifold.proj_tan0(
-        #     self.manifold.logmap0(output, self.curvatures[-1]),
-        #     c=self.curvatures[-1]
-        # )
+        output = self.manifold.proj_tan0(
+            self.manifold.logmap0(output, self.curvatures[-1]),
+            c=self.curvatures[-1]
+        )
         return output, distances, edges, node_mask, edge_mask
 
 
@@ -161,7 +172,10 @@ class HGCN(Encoder):
             )
         self.layers = nn.Sequential(*hgc_layers)
         self.message_passing = True
-        self.norm = HypNorm(self.manifold, args.dim, self.curvatures[-1])
+        if self.manifold.name == 'Hyperboloid':
+            self.norm = nn.LayerNorm(args.dim - 1)
+        else:
+            self.norm = nn.LayerNorm(args.dim)
 
     def encode(self, h, distances, edges, node_mask, edge_mask):
         h_hyp = self.manifold.proj(
@@ -173,9 +187,9 @@ class HGCN(Encoder):
 
         output, distances, edges, node_mask, edge_mask = super(HGCN, self).encode(h_hyp, distances, edges, node_mask, edge_mask)
 
-        # output = self.manifold.proj_tan0(
-        #     self.manifold.logmap0(output, self.curvatures[-1]),
-        #     c=self.curvatures[-1]
-        # )
+        output = self.manifold.proj_tan0(
+            self.manifold.logmap0(output, self.curvatures[-1]),
+            c=self.curvatures[-1]
+        )
         return output, distances, edges, node_mask, edge_mask
 

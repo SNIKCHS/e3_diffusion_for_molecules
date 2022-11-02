@@ -1,9 +1,11 @@
+import numpy as np
 from torch import nn
 import torch
 import math
 
 import manifolds
-from layers.hyp_layers import HyperbolicGraphConvolution
+from layers.att_layers import DenseAtt
+from layers.hyp_layers import HyperbolicGraphConvolution, HypLinear, HypNorm, HypAgg, HypAct
 
 
 class GCL(nn.Module):
@@ -69,31 +71,102 @@ class GCL(nn.Module):
         if node_mask is not None:
             h = h * node_mask
         return h, mij
+class Agg(nn.Module):
+    """
+    Hyperbolic aggregation layer.
+    """
 
+    def __init__(self, manifold, c, in_features, dropout, local_agg=True, edge_dim=1):
+        super(Agg, self).__init__()
+        self.manifold = manifold
+        self.c = c
+        self.in_features = in_features
+        self.dropout = dropout
+        self.local_agg = local_agg
+        self.normalization_factor = 100
+        self.aggregation_method = 'sum'
+        self.att = DenseAtt(in_features, dropout, edge_dim=edge_dim)
+        self.node_mlp = nn.Sequential(
+            nn.Linear(2 * in_features, in_features),
+            # nn.LayerNorm(in_features),
+            nn.SiLU(),
+            nn.Linear(in_features, in_features))
+
+    def forward(self, x, distances, edges, node_mask, edge_mask):
+        x_tangent = self.manifold.logmap0(x, c=self.c)  # (b*n_node,dim)
+
+        row, col = edges
+
+        if self.local_agg:
+            # x_row = x[row]  # 提供切空间 (b*n_node*n_node,dim)
+            # x_col = x[col]  # 要映射的向量 (b*n_node*n_node,dim)
+            x_local_tangent = self.manifold.logmap(x[row], x[col], c=self.c)  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
+            x_local_self_tangent = self.manifold.logmap(x, x, c=self.c)  # (b*n_atom,dim)
+            # if torch.any(torch.isnan(x_local_tangent)):
+            #     print('x_local_tangent nan')
+            # if torch.any(torch.isnan(x_local_self_tangent)):
+            #     print('x_local_self_tangent nan')
+            edge_feat = self.att(x_local_tangent, x_local_self_tangent[row], distances,
+                                 edge_mask)  # (b*n_node*n_node,dim)
+            # if torch.any(torch.isnan(edge_feat)):
+            #     print('edge_feat nan')
+            agg = unsorted_segment_sum(edge_feat, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
+                                       normalization_factor=self.normalization_factor,
+                                       aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,dim)->(b*n_nodes,dim)
+            # if torch.any(torch.isnan(agg)):
+            #     print('unsorted_segment_sum nan')
+            agg = torch.cat([x_local_self_tangent, agg], dim=1)  # (b*n_nodes,2*dim)
+            out = self.node_mlp(agg)  # residual connect
+            # print('out', out)
+            # if torch.any(torch.isnan(out)):
+            #     print('out nan')
+            support_t = self.manifold.proj_tan(out, x, self.c)
+            # if torch.any(torch.isnan(support_t)):
+            #     print('support_t nan')
+            # print('support_t',support_t)
+            output = self.manifold.expmap(support_t, x, c=self.c)
+            # if torch.any(torch.isnan(output)):
+            #     print('expmap nan')
+            #     print(output)
+            output = self.manifold.proj(output, c=self.c)
+        else:
+            edge_feat = self.att(x_tangent[row], x_tangent[col], distances, edge_mask)  # (b*atom_num*atom_num,dim)
+            agg = unsorted_segment_sum(edge_feat, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
+                                       normalization_factor=self.normalization_factor,
+                                       aggregation_method=self.aggregation_method)
+            agg = torch.cat([x_tangent, agg], dim=1)
+            out = x_tangent + self.node_mlp(agg)
+            support_t = self.manifold.proj_tan0(out, self.c)
+            output = self.manifold.proj(self.manifold.expmap0(support_t, c=self.c), c=self.c)
+        return output
 class HGCL(nn.Module):
     def __init__(self, input_nf, output_nf, c_in, c_out, act_fn=nn.SiLU(),manifold='Hyperboloid',edges_in_d=2):
         super(HGCL, self).__init__()
         self.manifold = getattr(manifolds, manifold)()
-        self.hgcl = HyperbolicGraphConvolution(self.manifold, input_nf, output_nf, c_in, c_out, dropout=0, act=act_fn, use_bias=1, local_agg=1,edge_dim=edges_in_d)
-        self.c_in = c_in
-        self.c_out = c_out
+        # self.hgcl = HyperbolicGraphConvolution(self.manifold, input_nf, output_nf, c_in, c_out, dropout=0, act=act_fn, use_bias=1, local_agg=1,edge_dim=edges_in_d)
+        self.norm = HypNorm(self.manifold, input_nf, c_in)
+        self.linear = HypLinear(self.manifold, input_nf, output_nf, c_in, dropout=0, use_bias=1)
+        self.agg = Agg(self.manifold, c_in, output_nf, dropout=0, local_agg=False, edge_dim=edges_in_d)
+        self.hyp_act = HypAct(self.manifold, c_in, c_out, act_fn)
+        self.norm1 = HypNorm(self.manifold, output_nf, c_in)
 
     def forward(self, h, edge_index, edge_attr=None, node_attr=None, node_mask=None, edge_mask=None):
-        h = self.manifold.proj(
-            self.manifold.expmap0(
-                self.manifold.proj_tan0(h, self.c_in), c=self.c_in
-            ),
-            c=self.c_in
-        )
-        input = (h, edge_attr, edge_index, node_mask, edge_mask)
-        output, _, _, _, _ = self.hgcl(input)
-        output = self.manifold.proj_tan0(
-            self.manifold.logmap0(output, self.c_out),
-            c=self.c_out
-        )
-        if node_mask is not None:
-            output = output * node_mask
-        return output, None
+        # if torch.any(torch.isnan(h)):
+        #     print('input nan')
+        h = self.norm(h)
+        # if torch.any(torch.isnan(h)):
+        #     print('norm0 nan')
+        h = self.linear.forward(h)
+        # if torch.any(torch.isnan(h)):
+        #     print('linear nan')
+        h = self.agg.forward(h, edge_attr, edge_index, node_mask, edge_mask)
+        # if torch.any(torch.isnan(h)):
+        #     print('agg nan')
+        h = self.hyp_act.forward(h)
+        # if torch.any(torch.isnan(h)):
+        #     print('act nan')
+
+        return h, None
 
 class EquivariantUpdate(nn.Module):
     def __init__(self, hidden_nf, normalization_factor, aggregation_method,
@@ -106,8 +179,10 @@ class EquivariantUpdate(nn.Module):
         torch.nn.init.xavier_uniform_(layer.weight, gain=0.001)
         self.coord_mlp = nn.Sequential(
             nn.Linear(input_edge, hidden_nf),
+            nn.LayerNorm(hidden_nf),
             act_fn,
             nn.Linear(hidden_nf, hidden_nf),
+            nn.LayerNorm(hidden_nf),
             act_fn,
             layer)
         self.normalization_factor = normalization_factor
@@ -116,15 +191,23 @@ class EquivariantUpdate(nn.Module):
     def coord_model(self, h, coord, edge_index, coord_diff, edge_attr, edge_mask):
         row, col = edge_index
         input_tensor = torch.cat([h[row], h[col], edge_attr], dim=1)
+        # if torch.any(torch.isnan(input_tensor)):
+        #     print('input_tensor nan')
         if self.tanh:
             trans = coord_diff * torch.tanh(self.coord_mlp(input_tensor)) * self.coords_range
         else:
             trans = coord_diff * self.coord_mlp(input_tensor)
+
+        # if torch.any(torch.isnan(trans)):
+        #     print('trans nan')
+
         if edge_mask is not None:
             trans = trans * edge_mask
         agg = unsorted_segment_sum(trans, row, num_segments=coord.size(0),
                                    normalization_factor=self.normalization_factor,
                                    aggregation_method=self.aggregation_method)
+        # if torch.any(torch.isnan(agg)):
+        #     print('agg nan')
         coord = coord + agg
         return coord
 
@@ -138,7 +221,7 @@ class EquivariantUpdate(nn.Module):
 class EquivariantBlock(nn.Module):
     def __init__(self, hidden_nf, edge_feat_nf=2, device='cpu', act_fn=nn.SiLU(), n_layers=2, attention=True,
                  norm_diff=True, tanh=False, coords_range=15, norm_constant=1, sin_embedding=None,
-                 normalization_factor=100, aggregation_method='sum',hyp=False):
+                 normalization_factor=100, aggregation_method='sum',hyp=False,c=None,manifold='Hyperboloid'):
         super(EquivariantBlock, self).__init__()
         self.hidden_nf = hidden_nf
         self.device = device
@@ -149,15 +232,18 @@ class EquivariantBlock(nn.Module):
         self.sin_embedding = sin_embedding
         self.normalization_factor = normalization_factor
         self.aggregation_method = aggregation_method
+        self.hyp = hyp
 
         if hyp:
+            self.manifold = getattr(manifolds, manifold)()
+            self.c = c
             acts = [act_fn] * n_layers  # len=args.num_layers
             dims = [self.hidden_nf] * (n_layers + 1)  # len=args.num_layers+1
-            curvatures = nn.ParameterList([nn.Parameter(torch.Tensor([1.])) for _ in range(n_layers + 1)])
+
             for i in range(0, n_layers):
                 self.add_module("gcl_%d" % i,
                                 HGCL(
-                                    dims[i], dims[i+1], curvatures[i], curvatures[i+1],acts[i],manifold='Hyperboloid',edges_in_d=edge_feat_nf
+                                    dims[i], dims[i+1], c, c,acts[i],manifold=manifold,edges_in_d=edge_feat_nf
                                 ))
         else:
             for i in range(0, n_layers):
@@ -174,26 +260,45 @@ class EquivariantBlock(nn.Module):
     def forward(self, h, x, edge_index, node_mask=None, edge_mask=None, edge_attr=None):
         # edge_index:list[rol,col] (b*n_nodes*n_nodes,)
         # Edit Emiel: Remove velocity as input
+        # if torch.any(torch.isnan(x)):
+        #     print('place 1 x nan')
+        # if torch.any(torch.isnan(h)):
+        #     print('place 1 h nan')
         distances, coord_diff = coord2diff(x, edge_index, self.norm_constant)
-
+        # if torch.any(torch.isnan(coord_diff)):
+        #     print('place 1 coord_diff nan')
         if self.sin_embedding is not None:
             distances = self.sin_embedding(distances)
-        edge_attr = torch.cat([distances, edge_attr], dim=1)  # (b*n_nodes*n_nodes,2) edge_attr是最初的distance
 
+        # if torch.any(torch.isnan(distances)):
+        #     print('distances nan')
+        # if torch.any(torch.isnan(edge_attr)):
+        #     print('edge_attr nan')
+        edge_attr = torch.cat([distances, edge_attr], dim=1)  # (b*n_nodes*n_nodes,2) edge_attr是最初的distance
         for i in range(0, self.n_layers):
             h, _ = self._modules["gcl_%d" % i](h, edge_index, edge_attr=edge_attr, node_mask=node_mask, edge_mask=edge_mask)
-        x = self._modules["gcl_equiv"](h, x, edge_index, coord_diff, edge_attr, node_mask, edge_mask)
 
-        # Important, the bias of the last linear might be non-zero
-        if node_mask is not None:
-            h = h * node_mask
+        # if torch.any(torch.isnan(h)):
+        #     print('place 2 h nan')
+        if self.hyp:
+            h_tan = self.manifold.logmap0(h,self.c)
+        else:
+            h_tan = h
+        # if torch.any(torch.isnan(h_tan)):
+        #     print('place 2 h_hyp nan')
+        input = (h, edge_attr, edge_index, node_mask, edge_mask)
+        x = self._modules["gcl_equiv"](h_tan, x, edge_index, coord_diff, edge_attr, node_mask, edge_mask)
+        # if torch.any(torch.isnan(x)):
+        #     print('place 2 x nan')
         return h, x
 
-
+def weight_init(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_normal_(m.weight, gain=0.25)
 class EGNN(nn.Module):
     def __init__(self, in_node_nf, in_edge_nf, hidden_nf, device='cpu', act_fn=nn.SiLU(), n_layers=3, attention=False,
                  norm_diff=True, out_node_nf=None, tanh=False, coords_range=15, norm_constant=1, inv_sublayers=2,
-                 sin_embedding=False, normalization_factor=100, aggregation_method='sum',hyp=False):
+                 sin_embedding=False, normalization_factor=100, aggregation_method='sum',hyp=False,c=None,manifold='Hyperboloid'):
         super(EGNN, self).__init__()
         if out_node_nf is None:
             out_node_nf = in_node_nf
@@ -204,6 +309,7 @@ class EGNN(nn.Module):
         self.norm_diff = norm_diff
         self.normalization_factor = normalization_factor
         self.aggregation_method = aggregation_method
+        self.hyp = hyp
 
         if sin_embedding:
             self.sin_embedding = SinusoidsEmbeddingNew()
@@ -212,8 +318,24 @@ class EGNN(nn.Module):
             self.sin_embedding = None
             edge_feat_nf = 2
 
-        self.embedding = nn.Linear(in_node_nf, self.hidden_nf)
-        self.embedding_out = nn.Linear(self.hidden_nf, out_node_nf)
+        if hyp:
+            self.manifold = getattr(manifolds, manifold)()
+            self.c = c
+            self.embedding = HypLinear(getattr(manifolds, manifold)(),in_node_nf, self.hidden_nf,c,dropout=0,use_bias=1)
+            # self.embedding_out = HypLinear(getattr(manifolds, manifold)(),hidden_nf, out_node_nf,c,dropout=0,use_bias=1)
+        else:
+            self.embedding = nn.Linear(in_node_nf, self.hidden_nf)
+        self.embedding_out = nn.Sequential(
+            nn.LayerNorm(hidden_nf),
+            nn.Linear(self.hidden_nf, hidden_nf),
+            act_fn,
+            nn.LayerNorm(hidden_nf),
+            nn.Linear(self.hidden_nf, hidden_nf),
+            act_fn,
+            nn.Linear(self.hidden_nf, out_node_nf)
+        )
+
+
         for i in range(0, n_layers):
             self.add_module("e_block_%d" % i, EquivariantBlock(hidden_nf, edge_feat_nf=edge_feat_nf, device=device,
                                                                act_fn=act_fn, n_layers=inv_sublayers,
@@ -221,8 +343,10 @@ class EGNN(nn.Module):
                                                                coords_range=coords_range, norm_constant=norm_constant,
                                                                sin_embedding=self.sin_embedding,
                                                                normalization_factor=self.normalization_factor,
-                                                               aggregation_method=self.aggregation_method,hyp=hyp))
+                                                               aggregation_method=self.aggregation_method,hyp=hyp,c=c,manifold=manifold))
         self.to(self.device)
+        self.apply(weight_init)
+
 
     def forward(self, h, x, edge_index, node_mask=None, edge_mask=None):
         # Edit Emiel: Remove velocity as input
@@ -230,13 +354,31 @@ class EGNN(nn.Module):
         if self.sin_embedding is not None:
             distances = self.sin_embedding(distances)
 
+
+        if self.hyp:
+            h0 = h[..., 0].clone()
+            h = self.manifold.expmap0(
+                self.manifold.proj_tan0(h, self.c), c=self.c
+            )
+
         h = self.embedding(h)  # default: (b*n_nodes,hidden_nf=128)
 
         for i in range(0, self.n_layers):
             h, x = self._modules["e_block_%d" % i](h, x, edge_index, node_mask=node_mask, edge_mask=edge_mask, edge_attr=distances)
+            # if torch.any(torch.isnan(h)):
+            #     print('loop'+str(i)+' nan')
 
         # Important, the bias of the last linear might be non-zero
+
+        if self.hyp:
+            h = self.manifold.proj_tan0(
+                self.manifold.logmap0(h, self.c),
+                c=self.c
+            )
+            h[...,0] = h0
+
         h = self.embedding_out(h)
+
         if node_mask is not None:
             h = h * node_mask
         return h, x

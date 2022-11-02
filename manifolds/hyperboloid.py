@@ -130,7 +130,7 @@ class Hyperboloid(Manifold):
 
     def expmap0(self, u, c):
         """
-        u从流形映射到原点切空间
+        u从原点切空间映射到流形
         :param u:
         :param c:
         :return:
@@ -184,6 +184,7 @@ class Hyperboloid(Manifold):
         """
         u = self.logmap0(x, c)
         mu = u @ m.transpose(-1, -2)
+
         return self.expmap0(mu, c)
 
     def ptransp(self, x, y, u, c):

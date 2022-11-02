@@ -17,12 +17,12 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_AE_epoch, test_AE
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='AE_HGCN_dropout_noclip')
+parser.add_argument('--exp_name', type=str, default='AE_HGCN_kl')
 
-parser.add_argument('--n_epochs', type=int, default=1000)
+parser.add_argument('--n_epochs', type=int, default=200)
 parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--lr', type=float, default=2e-4)
-parser.add_argument('--dropout', type=float, default=0.1)
+parser.add_argument('--dropout', type=float, default=0)
 parser.add_argument('--dim', type=int, default=20)
 parser.add_argument('--num_layers', type=int, default=4)
 parser.add_argument('--ode_regularization', type=float, default=1e-3)
@@ -62,7 +62,7 @@ parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
 parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
+parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -225,7 +225,7 @@ def main():
             #                 partition='Test', device=device, dtype=dtype,
             #                 nodes_dist=nodes_dist, property_norms=property_norms)
 
-            if nll_val <= best_nll_val:
+            if nll_val < best_nll_val:
                 best_nll_val = nll_val
                 # best_nll_test = nll_test
                 if args.save_model:  # 保存当前最优

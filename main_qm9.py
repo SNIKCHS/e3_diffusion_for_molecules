@@ -83,7 +83,7 @@ parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
 parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
+parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -224,7 +224,7 @@ def main():
     #     model.load_state_dict(flow_state_dict)
     #     optim.load_state_dict(optim_state_dict)
 
-    # flow_state_dict = torch.load('outputs/EDM/generative_model.npy')
+    # flow_state_dict = torch.load('outputs/EDM/generative_model_ema_105.npy')
     # optim_state_dict = torch.load('outputs/EDM/optim.npy')
     # model.load_state_dict(flow_state_dict)
     # optim.load_state_dict(optim_state_dict)
@@ -254,14 +254,13 @@ def main():
     best_nll_val = 1e8
     best_nll_test = 1e8
 
-    # analyze_and_save(args=args, epoch=199, model_sample=model_ema, nodes_dist=nodes_dist, #
+    # analyze_and_save(args=args, epoch=80, model_sample=model_ema, nodes_dist=nodes_dist, #
     #                  dataset_info=dataset_info, device=device,
     #                  prop_dist=prop_dist, n_samples=args.n_stability_samples)
-    # wandb: atm_stable
-    # 0.91249
-    # wandb: mol_stable
-    # 0.218
     # exit(0)
+    # {epoch=105 'mol_stable': 0.136, 'atm_stable': 0.8889993373094764}
+
+
     for epoch in range(args.start_epoch, args.n_epochs):
         start_epoch = time.time()
         train_epoch(args=args, loader=dataloaders['train'], epoch=epoch, model=model, model_dp=model_dp,

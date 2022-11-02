@@ -78,10 +78,10 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         if args.ema_decay > 0:
             ema.update_model_average(model_ema, model)
 
-        if i % args.n_report_steps == 0:
-            print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
-                  f"Loss {loss.item():.4f}, rec_loss: {rec_loss.item():.4f}, KL_loss: {KL_loss.item():.4f}, "
-                  f"GradNorm: {grad_norm:.1f},time:{time.time() - start:.4f}")
+
+        print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
+              f"Loss {loss.item():.4f}, rec_loss: {rec_loss.item():.4f}, KL_loss: {KL_loss.item():.4f}, "
+              f"GradNorm: {grad_norm:.1f},time:{time.time() - start:.4f}")
         nll_epoch.append(loss.item())
         wandb.log({"Batch NLL": loss.item(), 'rec_loss': rec_loss.item(), 'KL_loss': KL_loss.item()},
                   commit=True)
@@ -134,8 +134,10 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
 
         # standard nll from forward KL
         loss = nll + args.ode_regularization * reg_term
+        if torch.isnan(loss):
+            raise AssertionError
         loss.backward()
-        nn.utils.clip_grad_value_(model.parameters(), 0.1)
+
         if args.clip_grad:
             grad_norm = utils.gradient_clipping(model, gradnorm_queue)
         else:
@@ -160,7 +162,7 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
     # sample_different_sizes_and_save(model_dp, nodes_dist, args, device, dataset_info,
     #                                 prop_dist, epoch=epoch)
     # vis.visualize(f"outputs/{args.exp_name}/epoch_{epoch}_", dataset_info=dataset_info, wandb=wandb)
-    if epoch % args.visualize_epoch == 0 and epoch!=0:
+    if epoch % args.visualize_epoch == 0 and epoch != 0:
         start = time.time()
         if len(args.conditioning) > 0:
             save_and_sample_conditional(args, device, model_ema, prop_dist, dataset_info, epoch=epoch)
@@ -225,7 +227,6 @@ def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dt
         # standard nll from forward KL
         loss = nll + args.ode_regularization * reg_term
         loss.backward()
-        nn.utils.clip_grad_value_(model.parameters(), 0.1)
         if args.clip_grad:
             grad_norm = utils.gradient_clipping(model, gradnorm_queue)
         else:
@@ -460,6 +461,7 @@ def analyze_and_save(epoch, model_sample, nodes_dist, args, device, dataset_info
     wandb.log(validity_dict)
     if rdkit_tuple is not None:
         wandb.log({'Validity': rdkit_tuple[0][0], 'Uniqueness': rdkit_tuple[0][1], 'Novelty': rdkit_tuple[0][2]})
+        print('Validity:', rdkit_tuple[0][0], ' Uniqueness:', rdkit_tuple[0][1], ' Novelty:', rdkit_tuple[0][2])
 
     # model_sample.change_device(device_back)
     # print('Validity:', rdkit_tuple[0][0], ' Uniqueness:', rdkit_tuple[0][1], 'Novelty:', rdkit_tuple[0][2],
