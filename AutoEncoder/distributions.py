@@ -5,7 +5,7 @@ class DiagonalGaussianDistribution(object):
     def __init__(self, parameters, manifold=None,node_mask=None):
         self.parameters = parameters
         self.mean, self.logvar = torch.chunk(parameters, 2, dim=1)
-        self.logvar = torch.clamp(self.logvar, -30.0, 2.0)
+        self.logvar = torch.clamp(self.logvar, -30.0, 20.0)
         self.node_mask = node_mask
         self.std = torch.exp(0.5 * self.logvar)
         self.var = torch.exp(self.logvar)

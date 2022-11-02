@@ -170,15 +170,15 @@ class HypAgg(Module):
         self.aggregation_method = 'sum'
         self.att = DenseAtt(in_features, dropout, edge_dim=edge_dim)
         self.node_mlp = nn.Sequential(
-            nn.Linear(2 * in_features, in_features),
+            nn.Linear(in_features, in_features),
             nn.SiLU(),
             nn.Linear(in_features, in_features))
 
     def forward(self, x, distances, edges, node_mask, edge_mask):
         x_tangent = self.manifold.logmap0(x, c=self.c)  # (b*n_node,dim)
-
-        row, col = edges
-
+        row, col = edges # 0,0,0...0,1 0,1,2..,0
+        x_tangent_row = x_tangent[row]
+        x_tangent_col = x_tangent[col]
         if self.local_agg:
             # x_row = x[row]  # 提供切空间 (b*n_node*n_node,dim)
             # x_col = x[col]  # 要映射的向量 (b*n_node*n_node,dim)
@@ -188,16 +188,18 @@ class HypAgg(Module):
             #     print('x_local_tangent nan')
             # if torch.any(torch.isnan(x_local_self_tangent)):
             #     print('x_local_self_tangent nan')
-            edge_feat = self.att(x_local_tangent, x_local_self_tangent[row], distances,
-                                 edge_mask)  # (b*n_node*n_node,dim)
+            # edge_feat = self.att(x_local_tangent, x_local_self_tangent[row], distances,
+            #                      edge_mask)  # (b*n_node*n_node,dim)
+            att = self.att(x_tangent_row, x_tangent_col, distances,edge_mask)  # (b*n_node*n_node,dim)
             # if torch.any(torch.isnan(edge_feat)):
             #     print('edge_feat nan')
-            agg = unsorted_segment_sum(edge_feat, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
+            agg = x_local_tangent * att
+
+            agg = unsorted_segment_sum(agg, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
                                        normalization_factor=self.normalization_factor,
                                        aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,dim)->(b*n_nodes,dim)
             # if torch.any(torch.isnan(agg)):
             #     print('unsorted_segment_sum nan')
-            agg = torch.cat([x_local_self_tangent, agg], dim=1)  # (b*n_nodes,2*dim)
             out = x_local_self_tangent + self.node_mlp(agg)  # residual connect
             # print('out', out)
             # if torch.any(torch.isnan(out)):
@@ -209,13 +211,12 @@ class HypAgg(Module):
             # if torch.any(torch.isnan(output)):
             #     print('expmap nan')
             #     print(output)
-            output = self.manifold.proj(output, c=self.c)
+            # output = self.manifold.proj(output, c=self.c)
         else:
-            edge_feat = self.att(x_tangent[row], x_tangent[col], distances, edge_mask)  # (b*atom_num*atom_num,dim)
+            edge_feat = self.att(x_tangent_row, x_tangent_col, distances, edge_mask)  # (b*atom_num*atom_num,dim)
             agg = unsorted_segment_sum(edge_feat, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
                                        normalization_factor=self.normalization_factor,
                                        aggregation_method=self.aggregation_method)
-            agg = torch.cat([x_tangent, agg], dim=1)
             out = x_tangent + self.node_mlp(agg)
             support_t = self.manifold.proj_tan0(out, self.c)
             output = self.manifold.proj(self.manifold.expmap0(support_t, c=self.c), c=self.c)
