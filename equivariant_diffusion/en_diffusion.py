@@ -628,7 +628,9 @@ class EnVariationalDiffusion(torch.nn.Module):
 
         # Neural net prediction. 拟合噪声
         net_out = self.phi(z_t, t, node_mask, edge_mask, context)
-
+        print('t:', t[0, 0])
+        print('eps:', eps[0, 0])
+        print('net_out:', net_out[0, 0])
         # Compute the error.
         error = self.compute_error(net_out, gamma_t, eps)
 
@@ -730,7 +732,7 @@ class EnVariationalDiffusion(torch.nn.Module):
         assert neg_log_pxh.size() == delta_log_px.size()
         neg_log_pxh = neg_log_pxh - delta_log_px
 
-        return neg_log_pxh,loss_dict
+        return neg_log_pxh, loss_dict
 
     def sample_p_zs_given_zt(self, s, t, zt, node_mask, edge_mask, context, fix_noise=False):
         """Samples from zs ~ p(zs | zt). Only used during sampling."""
@@ -920,7 +922,20 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         assert neg_log_pxh.size() == delta_log_px.size()
         neg_log_pxh = neg_log_pxh - delta_log_px
 
-        return neg_log_pxh,loss_dict
+        return neg_log_pxh, loss_dict
+
+    def compute_error(self, net_out, gamma_t, eps):
+        """Computes error, i.e. the most likely prediction of x."""
+        eps_t = net_out
+        if self.training and self.loss_type == 'l2':
+            x_norm = self.n_dims * eps_t.shape[1]
+            t_norm = self.in_node_nf * eps_t.shape[1]
+            error_x = sum_except_batch((eps[..., :3] - eps_t[..., :3]) ** 2) / x_norm
+            error_t = sum_except_batch((eps[..., 3:] - eps_t[..., 3:]) ** 2) / t_norm
+            error = error_x + error_t
+        else:
+            error = sum_except_batch((eps - eps_t) ** 2)
+        return error
 
     def compute_loss(self, x, h, node_mask, edge_mask, context, t0_always, edge=None):
         """
@@ -981,10 +996,9 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         # Neural net prediction. 拟合噪声
         net_out = self.phi(z_t, t, node_mask, edge_mask, context, edge)
-        # print('t:',t[0,0])
-
-        # print('eps:', eps[0,0])
-        # print('net_out:', net_out[0,0])
+        print('t:', t[0, 0])
+        print('eps:', eps[0, 0])
+        print('net_out:', net_out[0, 0])
         # Compute the error.
 
         error = self.compute_error(net_out, gamma_t, eps)
@@ -1000,7 +1014,6 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         # The _constants_ depending on sigma_0 from the
         # cross entropy term E_q(z0 | x) [log p(x | z0)].
 
-
         neg_log_constants = -self.log_constants_p_x_given_z0(x, node_mask)
 
         # Reset constants during training with l2 loss.
@@ -1011,10 +1024,10 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         kl_prior = self.kl_prior(xh, node_mask)  # L_base
 
         # Combining the terms
-        if t0_always:  #验证时
+        if t0_always:  # 验证时
             loss_t = loss_t_larger_than_zero
             num_terms = self.T  # Since t=0 is not included here.
-            estimator_loss_terms = num_terms * loss_t # T*Lt
+            estimator_loss_terms = num_terms * loss_t  # T*Lt
 
             # Compute noise values for t = 0.
             t_zeros = torch.zeros_like(s)
@@ -1059,7 +1072,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             assert kl_prior.size() == estimator_loss_terms.size()
             assert kl_prior.size() == neg_log_constants.size()
 
-            loss = kl_prior + estimator_loss_terms + neg_log_constants # neg_log_constants 训练时为0
+            loss = kl_prior + estimator_loss_terms + neg_log_constants  # neg_log_constants 训练时为0
 
         assert len(loss.shape) == 1, f'{loss.shape} has more than only batch dim.'
 
@@ -1079,10 +1092,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         # Neural net prediction.
 
-
-
         eps_t = self.phi(zt, t, node_mask, edge_mask, context)
-
 
         # Compute mu for p(zs | zt).
         diffusion_utils.assert_mean_zero_with_mask(zt[:, :, :self.n_dims], node_mask)
@@ -1101,14 +1111,13 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
              zs[:, :, self.n_dims:]], dim=2
         )
 
-
         # Project down to avoid numerical runaway of the center of gravity.
         x = diffusion_utils.remove_mean_with_mask(zs[:, :, :self.n_dims], node_mask)
         h = zs[:, :, self.n_dims:]
         h = self.decode(x, h, node_mask, edge_mask)
-        zs = torch.cat([x,h['categorical'], h['integer']], dim=2)
+        zs = torch.cat([x, h['categorical'], h['integer']], dim=2)
 
-        return zs,zs_to_loop
+        return zs, zs_to_loop
 
     def sample_p_xh_given_z0(self, z0, node_mask, edge_mask, context, fix_noise=False):
         """Samples x ~ p(x|z0)."""
@@ -1148,7 +1157,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             t_array = s_array + 1
             s_array = s_array / self.T
             t_array = t_array / self.T
-            _,z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context, fix_noise=fix_noise)
+            _, z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context, fix_noise=fix_noise)
 
         # Finally sample p(x, h | z_0).
         x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context, fix_noise=fix_noise)
@@ -1165,8 +1174,9 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         batch_size, n_nodes, dim = h.size()
         edges = self.get_adj_matrix(n_nodes, batch_size)
         distances, _ = coord2diff(x.view(batch_size * n_nodes, -1), edges)
-        h_pred,_ = self.Decoder.decode(h.view(-1, dim), distances, edges, node_mask, edge_mask)  # (b,n_nodes,max_z)  # max_z = 1 padding+5 types
-        h_pred = h_pred.view(batch_size, n_nodes,-1)
+        h_pred, _ = self.Decoder.decode(h.view(-1, dim), distances, edges, node_mask,
+                                        edge_mask)  # (b,n_nodes,max_z)  # max_z = 1 padding+5 types
+        h_pred = h_pred.view(batch_size, n_nodes, -1)
 
         # torch.argmax(h_pred, dim=2) 0~5 -1 ->-1~4 mask ->0~4
         argmax = torch.argmax(h_pred, dim=2, keepdim=True)
@@ -1186,7 +1196,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         """
         Draw samples from the generative model, keep the intermediate states for visualization purposes.
         """
-        z = self.sample_combined_position_feature_noise(n_samples, n_nodes, node_mask) # (b,n_nodes,dim)
+        z = self.sample_combined_position_feature_noise(n_samples, n_nodes, node_mask)  # (b,n_nodes,dim)
 
         diffusion_utils.assert_mean_zero_with_mask(z[:, :, :self.n_dims], node_mask)
 
@@ -1203,7 +1213,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             s_array = s_array / self.T
             t_array = t_array / self.T
 
-            z_chain,z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context)
+            z_chain, z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context)
 
             # Write to chain tensor.
             write_index = (s * keep_frames) // self.T
@@ -1212,8 +1222,9 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         # Finally sample p(x, h | z_0).
         x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context)
 
-        chain[0] = torch.cat([x, h['categorical'], h['integer']], dim=2)  # Overwrite last frame with the resulting x and h.
-        chain_flat = chain.view(n_samples * keep_frames, z.size(1),outdim)
+        chain[0] = torch.cat([x, h['categorical'], h['integer']],
+                             dim=2)  # Overwrite last frame with the resulting x and h.
+        chain_flat = chain.view(n_samples * keep_frames, z.size(1), outdim)
 
         return chain_flat
 
@@ -1239,7 +1250,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             self._edges_dict[n_nodes] = {}
             return self.get_adj_matrix(n_nodes, batch_size)
 
-    def change_device(self,device):
+    def change_device(self, device):
         self.device = device
         self.Decoder.device = device
         self.dynamics.device = device

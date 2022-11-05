@@ -37,7 +37,7 @@ parser.add_argument('--diffusion_noise_precision', type=float, default=1e-5,
 parser.add_argument('--diffusion_loss_type', type=str, default='l2',
                     help='vlb, l2')
 
-parser.add_argument('--n_epochs', type=int, default=200)
+parser.add_argument('--n_epochs', type=int, default=1000)
 parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--brute_force', type=eval, default=False,
@@ -46,7 +46,7 @@ parser.add_argument('--actnorm', type=eval, default=True,
                     help='True | False')
 parser.add_argument('--break_train_epoch', type=eval, default=False,
                     help='True | False')
-parser.add_argument('--dp', type=eval, default=True,
+parser.add_argument('--dp', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--condition_time', type=eval, default=True,
                     help='True | False')
@@ -83,7 +83,7 @@ parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
 parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
+parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -128,7 +128,7 @@ atom_decoder = dataset_info['atom_decoder']
 
 
 args.cuda = not args.no_cuda and torch.cuda.is_available()
-device = torch.device("cuda" if args.cuda else "cpu")
+device = torch.device("cuda:1" if args.cuda else "cpu")
 dtype = torch.float32
 
 if args.resume is not None:
@@ -166,7 +166,7 @@ if args.no_wandb:
     mode = 'disabled'
 else:
     mode = 'online' if args.online else 'offline'
-kwargs = {'entity': args.wandb_usr, 'name': args.exp_name, 'project': 'e3_diffusion', 'config': args,
+kwargs = {'entity': args.wandb_usr, 'name': args.exp_name, 'project': 'test', 'config': args,
           'settings': wandb.Settings(_disable_stats=True), 'reinit': True, 'mode': mode}
 wandb.init(**kwargs)
 wandb.save('*.txt')
