@@ -628,9 +628,9 @@ class EnVariationalDiffusion(torch.nn.Module):
 
         # Neural net prediction. 拟合噪声
         net_out = self.phi(z_t, t, node_mask, edge_mask, context)
-        print('t:', t[0, 0])
-        print('eps:', eps[0, 0])
-        print('net_out:', net_out[0, 0])
+        # print('t:', t[0, 0])
+        # print('eps:', eps[0, 0])
+        # print('net_out:', net_out[0, 0])
         # Compute the error.
         error = self.compute_error(net_out, gamma_t, eps)
 

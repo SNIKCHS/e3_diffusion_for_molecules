@@ -23,6 +23,8 @@ class HyperbolicAE(nn.Module):
 
     def forward(self, x, h, node_mask, edge_mask):
         # note：将来使用EnVariationalDiffusion的normalize
+
+
         categories, charges = h  # (b,n_atom)
         batch_size, n_nodes = categories.shape
         edges = self.get_adj_matrix(n_nodes,batch_size)  # [rows, cols] rows=cols=(batch_size*n_nodes*n_nodes) value in [0,batch_size*n_nodes)

@@ -26,7 +26,7 @@ from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiff
     save_and_sample_chain, sample_different_sizes_and_save
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_kl_new')
+parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_kl_nohgcl')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
@@ -60,7 +60,7 @@ parser.add_argument('--clip_grad', type=eval, default=True,
 parser.add_argument('--trace', type=str, default='hutch',
                     help='hutch | exact')
 # EGNN args -->
-parser.add_argument('--hyp', type=eval, default=True,
+parser.add_argument('--hyp', type=eval, default=False,
                     help='use hyperbolic gcl')
 parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
