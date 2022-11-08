@@ -70,74 +70,7 @@ class GCL(nn.Module):
         if node_mask is not None:
             h = h * node_mask
         return h, mij
-# class Agg(nn.Module):
-#     """
-#     Hyperbolic aggregation layer.
-#     """
-#
-#     def __init__(self, manifold, c, in_features, dropout, local_agg=True, edge_dim=1):
-#         super(Agg, self).__init__()
-#         self.manifold = manifold
-#         self.c = c
-#         self.in_features = in_features
-#         self.dropout = dropout
-#         self.local_agg = local_agg
-#         self.normalization_factor = 100
-#         self.aggregation_method = 'sum'
-#         self.att = DenseAtt(in_features, dropout, edge_dim=edge_dim)
-#         self.node_mlp = nn.Sequential(
-#             nn.Linear(2 * in_features, in_features),
-#             # nn.LayerNorm(in_features),
-#             nn.SiLU(),
-#             nn.Linear(in_features, in_features))
-#
-#     def forward(self, x, distances, edges, node_mask, edge_mask):
-#         x_tangent = self.manifold.logmap0(x, c=self.c)  # (b*n_node,dim)
-#
-#         row, col = edges
-#
-#         if self.local_agg:
-#             # x_row = x[row]  # 提供切空间 (b*n_node*n_node,dim)
-#             # x_col = x[col]  # 要映射的向量 (b*n_node*n_node,dim)
-#             x_local_tangent = self.manifold.logmap(x[row], x[col], c=self.c)  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
-#             x_local_self_tangent = self.manifold.logmap(x, x, c=self.c)  # (b*n_atom,dim)
-#             # if torch.any(torch.isnan(x_local_tangent)):
-#             #     print('x_local_tangent nan')
-#             # if torch.any(torch.isnan(x_local_self_tangent)):
-#             #     print('x_local_self_tangent nan')
-#             edge_feat = self.att(x_local_tangent, x_local_self_tangent[row], distances,
-#                                  edge_mask)  # (b*n_node*n_node,dim)
-#             # if torch.any(torch.isnan(edge_feat)):
-#             #     print('edge_feat nan')
-#             agg = unsorted_segment_sum(edge_feat, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
-#                                        normalization_factor=self.normalization_factor,
-#                                        aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,dim)->(b*n_nodes,dim)
-#             # if torch.any(torch.isnan(agg)):
-#             #     print('unsorted_segment_sum nan')
-#             agg = torch.cat([x_local_self_tangent, agg], dim=1)  # (b*n_nodes,2*dim)
-#             out = self.node_mlp(agg)  # residual connect
-#             # print('out', out)
-#             # if torch.any(torch.isnan(out)):
-#             #     print('out nan')
-#             support_t = self.manifold.proj_tan(out, x, self.c)
-#             # if torch.any(torch.isnan(support_t)):
-#             #     print('support_t nan')
-#             # print('support_t',support_t)
-#             output = self.manifold.expmap(support_t, x, c=self.c)
-#             # if torch.any(torch.isnan(output)):
-#             #     print('expmap nan')
-#             #     print(output)
-#             output = self.manifold.proj(output, c=self.c)
-#         else:
-#             edge_feat = self.att(x_tangent[row], x_tangent[col], distances, edge_mask)  # (b*atom_num*atom_num,dim)
-#             agg = unsorted_segment_sum(edge_feat, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
-#                                        normalization_factor=self.normalization_factor,
-#                                        aggregation_method=self.aggregation_method)
-#             agg = torch.cat([x_tangent, agg], dim=1)
-#             out = x_tangent + self.node_mlp(agg)
-#             support_t = self.manifold.proj_tan0(out, self.c)
-#             output = self.manifold.proj(self.manifold.expmap0(support_t, c=self.c), c=self.c)
-#         return output
+
 class HGCL(nn.Module):
     def __init__(self, input_nf, output_nf, c_in, c_out, act_fn=nn.SiLU(),manifold='Hyperboloid',edges_in_d=2):
         super(HGCL, self).__init__()

@@ -15,15 +15,13 @@ from configs.datasets_config import get_dataset_info
 from os.path import join
 from qm9 import dataset
 from qm9.models import get_optim, get_model
-from equivariant_diffusion import en_diffusion
 from equivariant_diffusion.utils import assert_correctly_masked
 from equivariant_diffusion import utils as flow_utils
 import torch
 import time
 import pickle
 from qm9.utils import prepare_context, compute_mean_mad
-from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch, test_HyperbolicDiffusion, \
-    save_and_sample_chain, sample_different_sizes_and_save
+from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch, test_HyperbolicDiffusion
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
 parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_kl_nohgcl')
@@ -99,7 +97,7 @@ parser.add_argument('--save_model', type=eval, default=True,
 parser.add_argument('--generate_epochs', type=int, default=1,
                     help='save model')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of worker for the dataloader')
-parser.add_argument('--test_epochs', type=int, default=2)
+parser.add_argument('--test_epochs', type=int, default=5)
 parser.add_argument('--data_augmentation', type=eval, default=True, help='')
 parser.add_argument("--conditioning", nargs='+', default=[],
                     help='arguments : homo | lumo | alpha | gap | mu | Cv' )
@@ -245,9 +243,9 @@ def main():
     #     optim_state_dict = torch.load(join(args.resume, 'optim.npy'))
     #     model.load_state_dict(flow_state_dict)
     #     optim.load_state_dict(optim_state_dict)
-    # args.start_epoch = 33
-    # flow_state_dict = torch.load('outputs/Diffusion_AE_HGCN_kl/generative_model_32.npy')
-    # optim_state_dict = torch.load('outputs/Diffusion_AE_HGCN_kl/optim.npy')
+    # args.start_epoch = 193
+    # flow_state_dict = torch.load('outputs/Diffusion_AE_HGCN_kl_nohgcl/generative_model.npy')
+    # optim_state_dict = torch.load('outputs/Diffusion_AE_HGCN_kl_nohgcl/optim.npy')
     # model.load_state_dict(flow_state_dict,False)
     # optim.load_state_dict(optim_state_dict)
 
@@ -333,6 +331,7 @@ def main():
             print('Val loss: %.4f' % (nll_val))
             print('Best val loss: %.4f \t Best test loss:  %.4f' % (best_nll_val, best_nll_test))
             wandb.log({"Val loss ": nll_val}, commit=True)
+            wandb.log({"Best val loss ": best_nll_val}, commit=True)
             # wandb.log({"Test loss ": nll_test}, commit=True)
             wandb.log({"Best cross-validated test loss ": best_nll_test}, commit=True)
 
