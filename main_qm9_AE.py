@@ -97,7 +97,7 @@ parser.add_argument('--save_model', type=eval, default=True,
 parser.add_argument('--generate_epochs', type=int, default=1,
                     help='save model')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of worker for the dataloader')
-parser.add_argument('--test_epochs', type=int, default=5)
+parser.add_argument('--test_epochs', type=int, default=1)
 parser.add_argument('--data_augmentation', type=eval, default=True, help='')
 parser.add_argument("--conditioning", nargs='+', default=[],
                     help='arguments : homo | lumo | alpha | gap | mu | Cv' )

@@ -4,7 +4,7 @@ import torch
 import math
 
 import manifolds
-from layers.hyp_layers import HyperbolicGraphConvolution, HypLinear, HypNorm, HypAgg, HypAct
+from layers.hyp_layers import HypLinear, HypNorm, HypAgg, HypAct
 
 
 class GCL(nn.Module):
@@ -153,7 +153,7 @@ class EquivariantUpdate(nn.Module):
 class EquivariantBlock(nn.Module):
     def __init__(self, hidden_nf, edge_feat_nf=2, device='cpu', act_fn=nn.SiLU(), n_layers=2, attention=True,
                  norm_diff=True, tanh=False, coords_range=15, norm_constant=1, sin_embedding=None,
-                 normalization_factor=100, aggregation_method='sum',hyp=False,c=None,manifold='Hyperboloid'):
+                 normalization_factor=100, aggregation_method='sum',hyp=False,c_in=None,c_out=None,manifold='Hyperboloid'):
         super(EquivariantBlock, self).__init__()
         self.hidden_nf = hidden_nf
         self.device = device
@@ -168,14 +168,14 @@ class EquivariantBlock(nn.Module):
 
         if hyp:
             self.manifold = getattr(manifolds, manifold)()
-            self.c = c
+            self.c = c_out
             acts = [act_fn] * n_layers  # len=args.num_layers
             dims = [self.hidden_nf] * (n_layers + 1)  # len=args.num_layers+1
 
             for i in range(0, n_layers):
                 self.add_module("gcl_%d" % i,
                                 HGCL(
-                                    dims[i], dims[i+1], c, c,acts[i],manifold=manifold,edges_in_d=edge_feat_nf
+                                    dims[i], dims[i+1], c_in, c_out,acts[i],manifold=manifold,edges_in_d=edge_feat_nf
                                 ))
         else:
             for i in range(0, n_layers):
@@ -251,7 +251,7 @@ class EGNN(nn.Module):
 
         if hyp:
             self.manifold = getattr(manifolds, manifold)()
-            self.c = c
+            self.curvatures = nn.ParameterList([c]+[nn.Parameter(torch.Tensor([1])) for _ in range(n_layers)])
             self.embedding = HypLinear(getattr(manifolds, manifold)(),in_node_nf, self.hidden_nf,c,dropout=0,use_bias=1)
             # self.embedding_out = HypLinear(getattr(manifolds, manifold)(),hidden_nf, out_node_nf,c,dropout=0,use_bias=1)
         else:
@@ -266,16 +266,26 @@ class EGNN(nn.Module):
             nn.Linear(self.hidden_nf, out_node_nf)
         )
 
-
-        for i in range(0, n_layers):
-            self.add_module("e_block_%d" % i, EquivariantBlock(hidden_nf, edge_feat_nf=edge_feat_nf, device=device,
-                                                               act_fn=act_fn, n_layers=inv_sublayers,
-                                                               attention=attention, norm_diff=norm_diff, tanh=tanh,
-                                                               coords_range=coords_range, norm_constant=norm_constant,
-                                                               sin_embedding=self.sin_embedding,
-                                                               normalization_factor=self.normalization_factor,
-                                                               aggregation_method=self.aggregation_method,hyp=hyp,c=c,manifold=manifold))
-        self.to(self.device)
+        if hyp:
+            for i in range(0, n_layers):
+                self.add_module("e_block_%d" % i, EquivariantBlock(hidden_nf, edge_feat_nf=edge_feat_nf, device=device,
+                                                                   act_fn=act_fn, n_layers=inv_sublayers,
+                                                                   attention=attention, norm_diff=norm_diff, tanh=tanh,
+                                                                   coords_range=coords_range, norm_constant=norm_constant,
+                                                                   sin_embedding=self.sin_embedding,
+                                                                   normalization_factor=self.normalization_factor,
+                                                                   aggregation_method=self.aggregation_method,hyp=hyp,
+                                                                   c_in=self.curvatures[i],c_out=self.curvatures[i+1],
+                                                                   manifold=manifold))
+        else:
+            for i in range(0, n_layers):
+                self.add_module("e_block_%d" % i, EquivariantBlock(hidden_nf, edge_feat_nf=edge_feat_nf, device=device,
+                                                                   act_fn=act_fn, n_layers=inv_sublayers,
+                                                                   attention=attention, norm_diff=norm_diff, tanh=tanh,
+                                                                   coords_range=coords_range, norm_constant=norm_constant,
+                                                                   sin_embedding=self.sin_embedding,
+                                                                   normalization_factor=self.normalization_factor,
+                                                                   aggregation_method=self.aggregation_method,hyp=hyp))
         self.apply(weight_init)
 
 
@@ -289,7 +299,7 @@ class EGNN(nn.Module):
         if self.hyp:
             h0 = h[..., 0].clone()
             h = self.manifold.expmap0(
-                self.manifold.proj_tan0(h, self.c), c=self.c
+                self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
             )
 
         h = self.embedding(h)  # default: (b*n_nodes,hidden_nf=128)
@@ -303,8 +313,8 @@ class EGNN(nn.Module):
 
         if self.hyp:
             h = self.manifold.proj_tan0(
-                self.manifold.logmap0(h, self.c),
-                c=self.c
+                self.manifold.logmap0(h, self.curvatures[-1]),
+                c=self.curvatures[-1]
             )
             h[...,0] = h0
 
