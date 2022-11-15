@@ -251,7 +251,7 @@ class EGNN(nn.Module):
 
         if hyp:
             self.manifold = getattr(manifolds, manifold)()
-            self.curvatures = nn.ParameterList([c]+[nn.Parameter(torch.Tensor([1])) for _ in range(n_layers)])
+            self.curvatures = nn.ParameterList([c]+[nn.Parameter(torch.Tensor([0.001])) for _ in range(n_layers)])
             self.embedding = HypLinear(getattr(manifolds, manifold)(),in_node_nf, self.hidden_nf,c,dropout=0,use_bias=1)
             # self.embedding_out = HypLinear(getattr(manifolds, manifold)(),hidden_nf, out_node_nf,c,dropout=0,use_bias=1)
         else:

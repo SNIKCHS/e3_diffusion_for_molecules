@@ -213,7 +213,8 @@ class HypAgg(Module):
             #     print(output)
             # output = self.manifold.proj(output, c=self.c)
         else:
-            edge_feat = self.att(x_tangent_row, x_tangent_col, distances, edge_mask)  # (b*atom_num*atom_num,dim)
+            att = self.att(x_tangent_row, x_tangent_col, distances, edge_mask)  # (b*atom_num*atom_num,dim)
+            edge_feat = x_tangent_col * att
             agg = unsorted_segment_sum(edge_feat, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
                                        normalization_factor=self.normalization_factor,
                                        aggregation_method=self.aggregation_method)

@@ -933,6 +933,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             error_x = sum_except_batch((eps[..., :3] - eps_t[..., :3]) ** 2) / x_norm
             error_t = sum_except_batch((eps[..., 3:] - eps_t[..., 3:]) ** 2) / t_norm
             error = error_x + error_t
+            # print('x_err:',error_x.sum()/error.sum(),' feat_err:',error_t.sum()/error.sum())
         else:
             error = sum_except_batch((eps - eps_t) ** 2)
         return error
@@ -1044,7 +1045,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
             # loss_term_0 = -self.log_pxh_given_z0_without_constants(
             #     x, h, z_0, gamma_0, eps_0, net_out, node_mask)
-            loss_term_0 = -0.5 * self.compute_error(net_out, gamma_t, eps)
+            loss_term_0 = -0.5 * self.compute_error(net_out, gamma_t, eps_0)
 
             assert kl_prior.size() == estimator_loss_terms.size()
             assert kl_prior.size() == neg_log_constants.size()
@@ -1056,11 +1057,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             # Computes the L_0 term (even if gamma_t is not actually gamma_0)
             # and this will later be selected via masking.
 
-            loss_term_0 = -0.5 * self.compute_error(net_out, gamma_t, eps)
-
-            t_is_not_zero = 1 - t_is_zero
-
-            loss_t = loss_term_0 * t_is_zero.squeeze() + t_is_not_zero.squeeze() * loss_t_larger_than_zero
+            loss_t = loss_t_larger_than_zero
 
             # Only upweigh estimator if using the vlb objective.
             if self.training and self.loss_type == 'l2':

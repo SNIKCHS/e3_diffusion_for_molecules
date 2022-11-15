@@ -24,7 +24,7 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch, test_HyperbolicDiffusion
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_kl_nohgcl')
+parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_kl_hgcl_422')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
@@ -133,7 +133,7 @@ atom_decoder = dataset_info['atom_decoder']
 
 
 args.cuda = not args.no_cuda and torch.cuda.is_available()
-device = torch.device("cuda" if args.cuda else "cpu")
+device = torch.device("cuda:1" if args.cuda else "cpu")
 dtype = torch.float32
 
 if args.resume is not None:
@@ -243,7 +243,7 @@ def main():
     #     optim_state_dict = torch.load(join(args.resume, 'optim.npy'))
     #     model.load_state_dict(flow_state_dict)
     #     optim.load_state_dict(optim_state_dict)
-    # args.start_epoch = 193
+    # args.start_epoch = 423
     # flow_state_dict = torch.load('outputs/Diffusion_AE_HGCN_kl_nohgcl/generative_model.npy')
     # optim_state_dict = torch.load('outputs/Diffusion_AE_HGCN_kl_nohgcl/optim.npy')
     # model.load_state_dict(flow_state_dict,False)
