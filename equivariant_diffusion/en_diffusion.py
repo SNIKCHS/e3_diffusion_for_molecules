@@ -893,6 +893,32 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         # self.atom_charge_dict = {'H': 1, 'C': 6, 'N': 7, 'O': 8, 'F': 9}
         self.atom_decoder = torch.tensor([1, 6, 7, 8, 9], device=self.device)
 
+    def normalize(self, x, h=None, node_mask=None):
+        delta_log_px = None
+        if x is not None:
+            x = x / self.norm_values[0]
+            delta_log_px = -self.subspace_dimensionality(node_mask) * np.log(self.norm_values[0])
+
+        if h is not None:
+            # Casting to float in case h still has long or int type.
+            h = h.float()/ self.norm_values[1] * node_mask
+
+        return x, h, delta_log_px
+
+    def unnormalize(self, x, h, node_mask):
+        x = x * self.norm_values[0]
+        h = h * self.norm_values[1] * node_mask
+
+        return x, h
+
+    def unnormalize_z(self, z, node_mask):
+        # Parse from z
+        x, h = z[:, :, 0:self.n_dims], z[:, :, self.n_dims:]
+        # Unnormalize
+        x, h = self.unnormalize(x, h, node_mask)
+        output = torch.cat([x, h], dim=2)
+        return output
+
     def forward(self, x, h, node_mask=None, edge_mask=None, context=None):
         """
         Computes the loss (type l2 or NLL) if training. And if eval then always computes NLL.
@@ -905,6 +931,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         posterior, distances, edges, _, _ = self.Encoder(x, categories, charges, edges, node_mask, edge_mask)
         h = posterior.mode()
         h = h.view(batch_size, n_nodes, -1)
+        _,h,_ = self.normalize(None, h, node_mask)
         # Reset delta_log_px if not vlb objective.
         if self.training and self.loss_type == 'l2':
             delta_log_px = torch.zeros_like(delta_log_px)
@@ -1130,7 +1157,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         x = xh[:, :, :self.n_dims] * node_mask
         h = xh[:, :, self.n_dims:]
-
+        x, h = self.unnormalize(x, h, node_mask)
         h = self.decode(x, h, node_mask, edge_mask)
 
         return x, h
@@ -1214,7 +1241,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
             # Write to chain tensor.
             write_index = (s * keep_frames) // self.T
-            chain[write_index] = z_chain * node_mask
+            chain[write_index] = self.unnormalize_z(z_chain , node_mask)
 
         # Finally sample p(x, h | z_0).
         x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context)
