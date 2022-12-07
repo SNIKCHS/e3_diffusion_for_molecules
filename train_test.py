@@ -16,11 +16,15 @@ import torch
 
 def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
                    gradnorm_queue, lr_scheduler):
-    # torch.autograd.set_detect_anomaly(True)
     model_dp.train()
     model.train()
     nll_epoch = []
     n_iterations = len(loader)
+    # with torch.autograd.detect_anomaly():
+
+    # for name,param in model.named_parameters(): print(name,param)
+    # exit(0)
+
     for i, data in enumerate(loader):
         start = time.time()
         x = data['positions'].to(device, dtype)
@@ -28,7 +32,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         edge_mask = data['edge_mask'].to(device, dtype)
         one_hot = data['one_hot'].to(device, dtype)
 
-        categories = (torch.argmax(one_hot.int(), dim=2) + 1) * node_mask.squeeze()  # (b,n_nodes) o为padding，1~5
+        categories = (torch.argmax(one_hot.int(), dim=2)) * node_mask.squeeze()  # (b,n_nodes)，0~4
         charges = (data['charges'] if args.include_charges else torch.zeros(0)).to(device, dtype)
 
         x = remove_mean_with_mask(x, node_mask)
@@ -48,9 +52,12 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         optim.zero_grad()
 
         # transform batch through flow
-        rec_loss, KL_loss = model_dp(x, h, node_mask, edge_mask)
+        rec_loss,KL_loss = model_dp(x, h, node_mask, edge_mask)
         loss = rec_loss + args.ode_regularization*KL_loss
+        # if torch.isnan(loss):
+        #     raise AssertionError
         loss.backward()
+
 
         if args.clip_grad:
             grad_norm = utils.gradient_clipping(model, gradnorm_queue)
@@ -61,18 +68,18 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         if args.lr_scheduler:
             lr_scheduler.step(loss)
 
-        if args.model not in ['MLP', 'GCN'] and args.c is None:
-            # if i % 100 == 0:
-            #     curvatures = list(model.get_submodule('encoder.curvatures'))
-            #     print('encoder:', curvatures)
-            #     curvatures = list(model.get_submodule('decoder.curvatures'))
-            #     print('decoder:', curvatures)
-            en_curvatures = model.get_submodule('encoder.curvatures')
-            for p in en_curvatures.parameters():
-                p.data.clamp_(1e-8)
-            de_curvatures = model.get_submodule('decoder.curvatures')
-            for p in de_curvatures.parameters():
-                p.data.clamp_(1e-8)
+        # if args.model not in ['MLP', 'GCN'] and args.c is None:
+        #     if i % 100 == 0:
+        #         curvatures = list(model.get_submodule('encoder.curvatures'))
+        #         print('encoder:', curvatures)
+        #         curvatures = list(model.get_submodule('decoder.curvatures'))
+        #         print('decoder:', curvatures)
+        #     en_curvatures = model.get_submodule('encoder.curvatures')
+        #     for p in en_curvatures.parameters():
+        #         p.data.clamp_(1e-8)
+        #     de_curvatures = model.get_submodule('decoder.curvatures')
+        #     for p in de_curvatures.parameters():
+        #         p.data.clamp_(1e-8)
 
         # Update EMA if enabled.
         if args.ema_decay > 0:

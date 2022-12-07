@@ -1,11 +1,10 @@
-import math
-
 import torch
+from torch import nn
 import AutoEncoderForGeoopt.Decoders as Decoders
 import AutoEncoderForGeoopt.Encoders as Encoders
-from torch import nn
-import manifolds
 from AutoEncoderForGeoopt.CentroidDistance import CentroidDistance
+from geoopt.manifolds.lorentz import Lorentz
+import graphzoo
 
 
 class HyperbolicAE(nn.Module):
@@ -13,18 +12,16 @@ class HyperbolicAE(nn.Module):
     def __init__(self, args):
         super(HyperbolicAE, self).__init__()
         self.device = args.device
-        self.manifold = getattr(manifolds, args.manifold)()  # 选择相应的流形
         self.encoder = getattr(Encoders, args.model)(args)
-        c = self.encoder.curvatures if hasattr(self.encoder, 'curvatures') else args.c
-        self.decoder = Decoders.model2decoder[args.model](c, args)
-        self.distance = CentroidDistance(args, self.manifold, self.decoder.curvatures[-1])
+        manifold = self.encoder.manifolds[-1] if hasattr(self.encoder, 'manifolds') else Lorentz()
+        self.decoder = Decoders.model2decoder[args.model](manifold, args)
+        self.distance = CentroidDistance(args.num_centroid,args.dim, self.decoder.manifolds[-1])
         self.output_linear = nn.Sequential(
             nn.Linear(args.num_centroid, args.num_centroid),
             nn.ReLU(),
             nn.Linear(args.num_centroid, args.num_centroid),
             nn.ReLU(),
             nn.Linear(args.num_centroid, args.max_z),
-            nn.Softmax()
         )
             # nn.Linear(args.num_centroid,args.max_z)
         self.args = args
@@ -32,18 +29,15 @@ class HyperbolicAE(nn.Module):
         self.pred_edge = args.pred_edge
 
 
-
     def forward(self, x, h, node_mask, edge_mask):
-        # note：将来使用EnVariationalDiffusion的normalize
-
 
         categories, charges = h  # (b,n_atom)
         batch_size, n_nodes = categories.shape
         edges = self.get_adj_matrix(n_nodes,batch_size)  # [rows, cols] rows=cols=(batch_size*n_nodes*n_nodes) value in [0,batch_size*n_nodes)
         posterior, distances, edges, node_mask, edge_mask = self.encoder(x, categories, edges, node_mask, edge_mask)
         h = posterior.sample()
-
-        output,_ = self.decoder.decode(h, distances, edges, node_mask, edge_mask)
+        print(h[0])
+        output = self.decoder.decode(h, distances, edges, node_mask, edge_mask)
 
         _, node_centroid_sim = self.distance(output, node_mask)
         scores = self.output_linear(node_centroid_sim.squeeze())

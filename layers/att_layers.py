@@ -42,8 +42,8 @@ class DenseAtt(nn.Module):
         """
         #prepare gauss kernel distance
 
-        gauss_dist = calc_gaussian(distances,F.softplus(self.h_gauss)) * edge_mask
-
+        # gauss_dist = calc_gaussian(distances,F.softplus(self.h_gauss)) * edge_mask
+        gauss_dist = distances
         x_cat = torch.concat((x_left, x_right,gauss_dist), dim=1)  # (b*n*n,2*dim+1)
         # print(x_left.shape, x_right.shape,gauss_dist.shape)
         # mij = self.linear(x_cat)  # (b*n_node*n_node,dim)

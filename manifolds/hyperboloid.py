@@ -4,7 +4,7 @@ import torch
 
 from manifolds.base import Manifold
 from utils.math_utils import arcosh, cosh, sinh 
-
+from torch.autograd import Function
 
 class Hyperboloid(Manifold):
     """
@@ -21,6 +21,10 @@ class Hyperboloid(Manifold):
         self.eps = {torch.float32: 1e-7, torch.float64: 1e-15}
         self.min_norm = 1e-15
         self.max_norm = 1e6
+
+    def init_embed(self, embed, irange=1e-2,c=1):
+        embed.weight.data.uniform_(-irange, irange)
+        embed.weight.data.copy_(self.proj(embed.weight.data,c))
 
     def minkowski_dot(self, x, y, keepdim=True):
         res = torch.sum(x * y, dim=-1) - 2 * x[..., 0] * y[..., 0]
@@ -232,3 +236,49 @@ class Hyperboloid(Manifold):
         d = x.size(-1) - 1
         return sqrtK * x.narrow(-1, 1, d) / (x[:, 0:1] + sqrtK)
 
+    def distance(self, u, v):
+        d = -LorentzDot.apply(u, v)
+        return Acosh.apply(d, 1e-3)
+
+    def ldot(u, v, keepdim=False):
+        """
+        Lorentzian Scalar Product
+        Args:
+            u: [batch_size, d + 1]
+            v: [batch_size, d + 1]
+        Return:
+            keepdim: False [batch_size]
+            keepdim: True  [batch_size, 1]
+        """
+        d = u.size(1) - 1
+        uv = u * v
+        uv = torch.cat((-uv.narrow(1, 0, 1), uv.narrow(1, 1, d)), dim=1)
+        return torch.sum(uv, dim=1, keepdim=keepdim)
+
+class LorentzDot(Function):
+    @staticmethod
+    def forward(ctx, u, v):
+        ctx.save_for_backward(u, v)
+        return Hyperboloid.ldot(u, v)
+
+    @staticmethod
+    def backward(ctx, g):
+        u, v = ctx.saved_tensors
+        g = g.unsqueeze(-1).expand_as(u).clone()
+        g.narrow(-1, 0, 1).mul_(-1)
+        return g * v, g * u
+_eps = 1e-10
+class Acosh(Function):
+    @staticmethod
+    def forward(ctx, x, eps):
+        z = torch.sqrt(torch.clamp(x * x - 1 + eps, _eps))
+        ctx.save_for_backward(z)
+        ctx.eps = eps
+        return torch.log(x + z)
+
+    @staticmethod
+    def backward(ctx, g):
+        z, = ctx.saved_tensors
+        z = torch.clamp(z, min=ctx.eps)
+        z = g / z
+        return z, None

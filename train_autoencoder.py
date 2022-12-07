@@ -4,7 +4,7 @@ import utils.utils as utils
 import argparse
 import wandb
 
-from AutoEncoder.AutoEncoder import HyperbolicAE
+from AutoEncoderForGeoopt.AutoEncoder import HyperbolicAE
 from configs.datasets_config import get_dataset_info
 from qm9 import dataset
 from qm9.models import get_optim
@@ -17,21 +17,22 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_AE_epoch, test_AE
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='AE_HGCN_kl')
+parser.add_argument('--exp_name', type=str, default='AE_HGCN_kl_new')
 
 parser.add_argument('--n_epochs', type=int, default=200)
-parser.add_argument('--batch_size', type=int, default=128)
-parser.add_argument('--lr', type=float, default=2e-4)
+parser.add_argument('--batch_size', type=int, default=1)
+parser.add_argument('--lr', type=float, default=2e-3)
 parser.add_argument('--dropout', type=float, default=0)
 parser.add_argument('--dim', type=int, default=20)
 parser.add_argument('--num_layers', type=int, default=4)
 parser.add_argument('--ode_regularization', type=float, default=1e-4)
 parser.add_argument('--bias', type=int, default=1)
-parser.add_argument('--max_z', type=int, default=6)  # pad+5 types
-parser.add_argument('--device', type=str, default='cuda')
+parser.add_argument('--max_z', type=int, default=5)  # pad+5 types
+parser.add_argument('--device', type=str, default='cuda:1')
+parser.add_argument("--num_centroid", type=int, default=20)
 parser.add_argument('--model', type=str, default='HGCN',
                     help='MLP,HNN,GCN,HGCN')
-parser.add_argument('--manifold', type=str, default='Hyperboloid',
+parser.add_argument('--manifold', type=str, default='Lorentz',
                     help='Euclidean, Hyperboloid, PoincareBall')
 parser.add_argument('--c', type=float, default=None)
 parser.add_argument('--act', type=str, default='silu',
@@ -48,7 +49,7 @@ parser.add_argument('--break_train_epoch', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--dp', type=eval, default=False,
                     help='True | False')
-parser.add_argument('--clip_grad', type=eval, default=False,
+parser.add_argument('--clip_grad', type=eval, default=True,
                     help='True | False')
 
 # <-- EGNN args
@@ -62,7 +63,7 @@ parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
 parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
+parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -96,7 +97,7 @@ atom_decoder = dataset_info['atom_decoder']
 # args, unparsed_args = parser.parse_known_args()
 
 args.cuda = not args.no_cuda and torch.cuda.is_available()
-device = torch.device("cuda" if args.cuda else "cpu")
+device = torch.device(args.device)
 dtype = torch.float32
 
 if args.resume is not None:

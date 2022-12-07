@@ -13,12 +13,14 @@ class DiagonalGaussianDistribution(object):
 
 
     def sample(self):
-        x = self.mean + self.std * torch.randn(self.mean.shape).to(device=self.parameters.device)
-        if self.manifold.name == 'Hyperboloid':
-            narrowed = x.narrow(-1, 0, 1)
-            vals = torch.zeros_like(x)
-            vals[:, 0:1] = narrowed
-            x = x - vals
+
+
+        if self.manifold is not None:
+            # n,dim = self.mean.shape
+
+            x = self.manifold.random_normal(self.mean.shape,mean=self.mean,std=self.std)
+        else:
+            x = self.mean + self.std * torch.randn(self.mean.shape).to(device=self.parameters.device)
 
         x = x * self.node_mask
         return x

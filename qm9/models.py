@@ -2,6 +2,8 @@ import torch
 from torch.distributions.categorical import Categorical
 
 import numpy as np
+
+from AutoEncoder.radam import RiemannianAdam
 from egnn.models import EGNN_dynamics_QM9
 
 from equivariant_diffusion.en_diffusion import EnVariationalDiffusion, HyperbolicEnVariationalDiffusion
@@ -77,10 +79,14 @@ def get_model(args, device, dataset_info, dataloader_train, encoder=None, decode
 
 
 def get_optim(args, generative_model):
-    optim = torch.optim.AdamW(
-        generative_model.parameters(),
-        lr=args.lr, amsgrad=True,
-        weight_decay=1e-12)
+    if args.manifold =='Hyperboloid':
+        optim =RiemannianAdam(params=generative_model.parameters(), lr=args.lr,
+                                                    weight_decay=1e-12)
+    else:
+        optim = torch.optim.AdamW(
+            generative_model.parameters(),
+            lr=args.lr, amsgrad=True,
+            weight_decay=1e-12)
 
     return optim
 
