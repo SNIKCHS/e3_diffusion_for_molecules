@@ -35,7 +35,7 @@ class Hyperboloid(Manifold):
 
     def sqdist(self, x, y, c):
         """
-        计算x和y的本征距离
+        计算x和y的本征距离平方
         :param x:
         :param y:
         :param c:
@@ -45,8 +45,8 @@ class Hyperboloid(Manifold):
         prod = self.minkowski_dot(x, y)
         theta = torch.clamp(-prod / K, min=1.0 + self.eps[x.dtype])
         sqdist = K * arcosh(theta) ** 2
-        # return torch.clamp(sqdist, max=50.0)
-        return sqdist
+        return torch.clamp(sqdist, max=50.0)
+        # return sqdist
 
     def proj(self, x, c):
         """
@@ -58,7 +58,7 @@ class Hyperboloid(Manifold):
         K = 1. / c
         d = x.size(-1) - 1
         y = x.narrow(-1, 1, d)
-        y_sqnorm = torch.norm(y, p=2, dim=1, keepdim=True) ** 2 
+        y_sqnorm = torch.norm(y, p=2, dim=1, keepdim=True) ** 2
         mask = torch.ones_like(x)
         mask[:, 0] = 0
         vals = torch.zeros_like(x)
@@ -110,7 +110,7 @@ class Hyperboloid(Manifold):
         theta = torch.clamp(theta, min=self.min_norm)
         result = cosh(theta) * x + sinh(theta) * u / theta
         return self.proj(result, c)
-        
+
     def logmap(self, x, y, c):
         """
         把y从流形映射到x的切空间
