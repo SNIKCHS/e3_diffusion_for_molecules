@@ -24,7 +24,7 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch, test_HyperbolicDiffusion
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_kl_nohgcl_scale')
+parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_kl_edge')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
@@ -111,7 +111,7 @@ parser.add_argument('--ema_decay', type=float, default=0.999,
 parser.add_argument('--augment_noise', type=float, default=0)
 parser.add_argument('--n_stability_samples', type=int, default=500,
                     help='Number of samples to compute the stability')
-parser.add_argument('--normalize_factors', type=eval, default=[1, 4, 1],
+parser.add_argument('--normalize_factors', type=eval, default=[1, 1, 1],
                     help='normalize factors for [x, categorical, integer]')
 parser.add_argument('--remove_h', action='store_true')
 parser.add_argument('--include_charges', type=eval, default=True,
@@ -203,8 +203,8 @@ else:
 args.context_node_nf = context_node_nf
 
 
-AE_state_dict = torch.load('outputs/AE_HGCN_kl/AE_ema.npy')
-with open('outputs/AE_HGCN_kl/args.pickle', 'rb') as f:
+AE_state_dict = torch.load('outputs/AE_HGCN_noaddedge/AE_ema.npy')
+with open('outputs/AE_HGCN_noaddedge/args.pickle', 'rb') as f:
     AE_args = pickle.load(f)
 AE_args.dropout = 0
 AutoEncoder = HyperbolicAE(AE_args)

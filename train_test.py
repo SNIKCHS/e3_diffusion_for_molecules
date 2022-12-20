@@ -48,8 +48,8 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         optim.zero_grad()
 
         # transform batch through flow
-        rec_loss, KL_loss = model_dp(x, h, node_mask, edge_mask)
-        loss = rec_loss + args.ode_regularization*KL_loss
+        rec_loss, KL_loss,edge_loss = model_dp(x, h, node_mask, edge_mask)
+        loss = rec_loss + args.ode_regularization*KL_loss+edge_loss
         loss.backward()
 
         if args.clip_grad:
@@ -80,10 +80,10 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
 
 
         print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
-              f"Loss {loss.item():.4f}, rec_loss: {rec_loss.item():.4f}, KL_loss: {KL_loss.item():.4f}, "
+              f"Loss {loss.item():.4f}, rec_loss: {rec_loss.item():.4f},edge_loss: {edge_loss.item():.4f}, KL_loss: {KL_loss.item():.4f}, "
               f"GradNorm: {grad_norm:.1f},time:{time.time() - start:.4f}")
         nll_epoch.append(loss.item())
-        wandb.log({"Batch NLL": loss.item(), 'rec_loss': rec_loss.item(), 'KL_loss': KL_loss.item()},
+        wandb.log({"Batch NLL": loss.item(), 'rec_loss': rec_loss.item(), 'KL_loss': KL_loss.item(),'edge_loss': edge_loss.item()},
                   commit=True)
         if args.break_train_epoch:
             break
@@ -307,16 +307,16 @@ def test_AE(args, loader, epoch, eval_model, device, dtype, property_norms, part
                 context = None
 
             # transform batch through flow
-            rec_loss, kl_loss = eval_model(x, h, node_mask, edge_mask)
+            rec_loss, KL_loss,edge_loss = eval_model(x, h, node_mask, edge_mask)
             # standard nll from forward KL
-            nll = rec_loss + 1e-6*kl_loss
+            nll = rec_loss + 1e-6*KL_loss + edge_loss
             # standard nll from forward KL
 
             nll_epoch += nll * batch_size
             n_samples += batch_size
             if i % args.n_report_steps == 0:
                 print(f"\r {partition} NLL \t epoch: {epoch}, iter: {i}/{n_iterations}, "
-                      f"NLL: {nll.item():.6f} \t node_loss: {rec_loss.item():.6f} \t KL_loss: {kl_loss.item():.6f}")
+                      f"NLL: {nll.item():.6f} \t node_loss: {rec_loss.item():.6f} \tedge_loss: {edge_loss.item():.6f} \t KL_loss: {KL_loss.item():.6f}")
 
     return nll_epoch / n_samples
 

@@ -10,7 +10,7 @@ from torch.nn.modules.module import Module
 from layers.att_layers import DenseAtt
 
 
-def get_dim_act_curv(args):
+def get_dim_act_curv(args,num_layers,enc = True):
     """
     Helper function to get dimension and activation at every layer.
     :param args:
@@ -20,17 +20,20 @@ def get_dim_act_curv(args):
         act = lambda x: x
     else:
         act = getattr(F, args.act)
-    acts = [act] * (args.num_layers)  # len=args.num_layers
+    acts = [act] * (num_layers)  # len=args.num_layers
     # dims = [args.dim] * (args.num_layers + 1)  # len=args.num_layers+1
-    dims = [args.dim] + [args.hidden_dim] * (args.num_layers - 1) + [args.dim]  # len=args.num_layers+1
+    if enc:
+        dims = [args.hidden_dim] * num_layers + [args.dim]  # len=args.num_layers+1
+    else:
+        dims = [args.dim]+[args.hidden_dim] * num_layers   # len=args.num_layers+1
     # dims = [args.dim] + [args.hidden_dim] * (args.num_layers)  # len=args.num_layers+1
 
     if args.c is None:
         # create list of trainable curvature parameters
-        curvatures = nn.ParameterList([nn.Parameter(torch.Tensor([1.])) for _ in range(args.num_layers + 1)])
+        curvatures = nn.ParameterList([nn.Parameter(torch.Tensor([1.])) for _ in range(num_layers + 1)])
     else:
         # fixed curvature
-        curvatures = [torch.tensor([args.c]).to(args.device) for _ in range(args.num_layers + 1)]
+        curvatures = [torch.tensor([args.c]).to(args.device) for _ in range(num_layers + 1)]
 
     return dims, acts, curvatures
 
@@ -56,39 +59,122 @@ class HNNLayer(nn.Module):
         # print('hyp_act:', torch.any(torch.isnan(h)).item())
         return h
 
+class HGCLayer(nn.Module):
+    def __init__(self, manifold, in_features, out_features, c_in, c_out, dropout, act):
+        super().__init__()
+        self.manifold = manifold
+        self.in_features = in_features
+        self.out_features = out_features
+        self.c_in = c_in
+        self.bias = nn.Parameter(torch.Tensor(1, out_features))
+        self.linear = nn.Linear(in_features, out_features, bias=False)
 
-class HyperbolicGraphConvolution(nn.Module):
-    """
-    Hyperbolic graph convolution layer.
-    """
+        self.normalization_factor = 100
+        self.aggregation_method = 'sum'
+        self.att = DenseAtt(out_features,dropout, edge_dim=2)
+        self.node_mlp = nn.Sequential(
+            nn.Linear(out_features+1, out_features),
+            nn.LayerNorm(out_features),
+            nn.SiLU(),
+            nn.Linear(out_features, out_features))
 
-    def __init__(self, manifold, in_features, out_features, c_in, c_out, dropout, act, use_bias, local_agg, edge_dim=1):
-        super(HyperbolicGraphConvolution, self).__init__()
-        self.norm = HypNorm(manifold, in_features, c_in)
-        self.linear = HypLinear(manifold, in_features, out_features, c_in, dropout, use_bias)
-        self.agg = HypAgg(manifold, c_in, out_features, dropout, local_agg=local_agg, edge_dim=edge_dim)
-        self.hyp_act = HypAct(manifold, c_in, c_out, act)
+        self.c_out = c_out
+        self.act = act
+        if self.manifold.name == 'Hyperboloid':
+            self.ln = nn.LayerNorm(out_features - 1)
+        else:
+            self.ln = nn.LayerNorm(out_features)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        # init.xavier_uniform_(self.linear.weight, gain=0.01)
+        init.constant_(self.bias, 0.1)
 
     def forward(self, input):
         h, distances, edges, node_mask, edge_mask = input
-        # if torch.any(torch.isnan(h)):
-        #     print('input nan')
-        h = self.norm(h)
-        # if torch.any(torch.isnan(h)):
-        #     print('norm0 nan')
-        h = self.linear.forward(h)
-        # if torch.any(torch.isnan(h)):
-        #     print('linear nan')
-        h = self.agg.forward(h, distances, edges, node_mask, edge_mask)
-        # if torch.any(torch.isnan(h)):
-        #     print(h[0:5])
-        #     print('agg nan')
-        h = self.hyp_act.forward(h)
-        # if torch.any(torch.isnan(h)):
-        #     print('act nan')
+
+        h = self.HypLinear(h)
+        h = self.HypAgg(h, distances, edges, node_mask, edge_mask)
+        h = self.HNorm(h)
+        h = self.HypAct(h)
         output = (h, distances, edges, node_mask, edge_mask)
+        return output
+
+    def HypLinear(self, x):
+        x = self.manifold.logmap0(x, self.c_in)
+        x = self.linear(x)
+        x = self.manifold.proj_tan0(x, self.c_in)
+        x = self.manifold.expmap0(x, self.c_in)
+        bias = self.manifold.proj_tan0(self.bias.view(1, -1), self.c_in)
+        hyp_bias = self.manifold.expmap0(bias, self.c_in)
+        res = self.manifold.mobius_add(x, hyp_bias, self.c_in)
+        return res
+
+    def HypAgg(self, x, distances, edges, node_mask, edge_mask):
+        x_tangent = self.manifold.logmap0(x, c=self.c_in)  # (b*n_node,dim)
+        row, col = edges  # 0,0,0...0,1 0,1,2..,0
+        x_tangent_row = x_tangent[row]
+        x_tangent_col = x_tangent[col]
+
+        geodesic = self.manifold.sqdist(x[row], x[col],c=self.c_in)
+        att = self.att(x_tangent_row, x_tangent_col, torch.cat([distances,geodesic],dim=-1), edge_mask)  # (b*n_node*n_node,dim)
+
+        x_local_tangent = self.manifold.logmap(x[row], x[col], c=self.c_in)  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
+        agg = x_local_tangent * att
+        # agg = self.node_mlp(torch.concat([agg,distances],dim=1))
+
+        out = unsorted_segment_sum(agg, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
+                                   normalization_factor=self.normalization_factor,
+                                   aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,dim)->(b*n_nodes,dim)
+
+        # out = self.node_mlp(out)
+        support_t = self.manifold.proj_tan(out, x, self.c_in)
+        output = self.manifold.expmap(support_t, x, c=self.c_in)
 
         return output
+
+    def HypAct(self, x):
+        xt = self.act(self.manifold.logmap0(x, c=self.c_in))
+        xt = self.manifold.proj_tan0(xt, c=self.c_out)
+        out = self.manifold.expmap0(xt, c=self.c_out)
+        return out
+
+    def HNorm(self, x):
+        h = self.manifold.logmap0(x, self.c_in)
+        if self.manifold.name == 'Hyperboloid':
+            h[..., 1:] = self.ln(h[..., 1:].clone())
+        else:
+            h = self.ln(h)
+        h = self.manifold.expmap0(h, c=self.c_in)
+        return h
+
+# class HyperbolicGraphConvolution(nn.Module):
+#     """
+#     Hyperbolic graph convolution layer.
+#     """
+#
+#     def __init__(self, manifold, in_features, out_features, c_in, c_out, dropout, act, use_bias, local_agg, edge_dim=1):
+#         super(HyperbolicGraphConvolution, self).__init__()
+#         self.norm = HypNorm(manifold, in_features, c_in)
+#         self.linear = HypLinear(manifold, in_features, out_features, c_in, dropout, use_bias)
+#         self.agg = HypAgg(manifold, c_in, out_features, dropout, local_agg=local_agg, edge_dim=edge_dim)
+#         self.hyp_act = HypAct(manifold, c_in, c_out, act)
+#
+#     def forward(self, input):
+#         h, distances, edges, node_mask, edge_mask = input
+#
+#
+#
+#         h = self.linear.forward(h)
+#
+#         h = self.agg.forward(h, distances, edges, node_mask, edge_mask)
+#         h = self.norm(h)
+#
+#         h = self.hyp_act.forward(h)
+#
+#         output = (h, distances, edges, node_mask, edge_mask)
+#
+#         return output
 
 
 class HypLinear(nn.Module):

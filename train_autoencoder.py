@@ -16,15 +16,19 @@ import pickle
 from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_AE_epoch, test_AE
 
+import numpy as np
+
+
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='AE_HGCN_kl_predLink')
+parser.add_argument('--exp_name', type=str, default='AE_HGCN')
 
 parser.add_argument('--n_epochs', type=int, default=200)
 parser.add_argument('--batch_size', type=int, default=128)
-parser.add_argument('--lr', type=float, default=2e-4)
+parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--dropout', type=float, default=0)
 parser.add_argument('--dim', type=int, default=20)
-parser.add_argument('--num_layers', type=int, default=4)
+parser.add_argument('--enc_layers', type=int, default=8)
+parser.add_argument('--dec_layers', type=int, default=4)
 parser.add_argument('--ode_regularization', type=float, default=1e-4)
 parser.add_argument('--bias', type=int, default=1)
 parser.add_argument('--max_z', type=int, default=6)  # pad+5 types
@@ -34,7 +38,7 @@ parser.add_argument('--model', type=str, default='HGCN',
 parser.add_argument('--manifold', type=str, default='Hyperboloid',
                     help='Euclidean, Hyperboloid, PoincareBall')
 parser.add_argument('--c', type=float, default=None)
-parser.add_argument('--act', type=str, default='relu',
+parser.add_argument('--act', type=str, default='silu',
                     help='relu,silu,leaky_relu')
 parser.add_argument('--local_agg', type=int, default=1)
 parser.add_argument('--lr_scheduler', type=eval, default=False,
@@ -51,6 +55,9 @@ parser.add_argument('--dp', type=eval, default=False,
 parser.add_argument('--clip_grad', type=eval, default=True,
                     help='True | False')
 
+parser.add_argument('--wandb_usr', type=str,default='elma')
+parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
+
 # <-- EGNN args
 parser.add_argument('--dataset', type=str, default='qm9',
                     help='qm9 | qm9_second_half (train only on the last 50K samples of the training dataset)')
@@ -61,8 +68,7 @@ parser.add_argument('--filter_n_atoms', type=int, default=None,
 parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
-parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
+
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')

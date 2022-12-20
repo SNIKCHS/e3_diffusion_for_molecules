@@ -15,17 +15,23 @@ class DenseAtt(nn.Module):
     def __init__(self, in_features, dropout,edge_dim=1):
         super(DenseAtt, self).__init__()
         self.dropout = dropout
+        # self.att_mlp = nn.Sequential(
+        #     nn.Linear(2 * in_features + edge_dim, 2 * in_features, bias=True),
+        #     nn.SiLU(),
+        #     nn.Dropout(self.dropout),
+        #     nn.Linear(2 * in_features, in_features, bias=True),
+        #     nn.SiLU(),
+        #     nn.Dropout(self.dropout),
+        #     nn.Linear(in_features, 1),
+        #     nn.Sigmoid()
+        # )
+        # self.h_gauss = nn.Parameter(torch.Tensor(1))
         self.att_mlp = nn.Sequential(
-            nn.Linear(2 * in_features + edge_dim, 2 * in_features, bias=True),
+            nn.Linear(2 * in_features + edge_dim, in_features, bias=True),
             nn.SiLU(),
-            nn.Dropout(self.dropout),
-            nn.Linear(2 * in_features, in_features, bias=True),
-            nn.SiLU(),
-            nn.Dropout(self.dropout),
             nn.Linear(in_features, 1),
             nn.Sigmoid()
         )
-        self.h_gauss = nn.Parameter(torch.Tensor(1))
         self.in_features = in_features
 
     def forward (self, x_left, x_right, distances, edge_mask):
@@ -42,15 +48,9 @@ class DenseAtt(nn.Module):
         """
         #prepare gauss kernel distance
 
-        gauss_dist = calc_gaussian(distances,F.softplus(self.h_gauss)) * edge_mask
-
-        x_cat = torch.concat((x_left, x_right,gauss_dist), dim=1)  # (b*n*n,2*dim+1)
-        # print(x_left.shape, x_right.shape,gauss_dist.shape)
-        # mij = self.linear(x_cat)  # (b*n_node*n_node,dim)
-
+        distances = distances * edge_mask
+        x_cat = torch.concat((x_left, x_right,distances), dim=1)  # (b*n*n,2*dim+1)
         att = self.att_mlp(x_cat)  # (b*n_node*n_node,1)
-
-        # att_adj = mij * att  # (b*n_node*n_node,dim)
 
         return att * edge_mask
 

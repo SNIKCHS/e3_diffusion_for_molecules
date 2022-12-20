@@ -6,7 +6,11 @@ import AutoEncoder.Encoders as Encoders
 from torch import nn
 import manifolds
 
-
+def weight_init(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_uniform_(m.weight,gain=0.25)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
 class HyperbolicAE(nn.Module):
 
     def __init__(self, args):
@@ -19,21 +23,30 @@ class HyperbolicAE(nn.Module):
         self.args = args
         self._edges_dict = {}
         self.pred_edge = args.pred_edge
+        self.apply(weight_init)
+        self.edge_mlp = nn.Sequential(
+            nn.Linear(2*args.dim,args.dim),
+            nn.Dropout(0.1),
+            nn.SiLU(),
+            nn.Linear(args.dim, args.dim),
+            nn.Dropout(0.1),
+            nn.SiLU(),
+            nn.Linear(args.dim, 1),
+            nn.Softplus()
+        )
 
 
     def forward(self, x, h, node_mask, edge_mask):
-        # note：将来使用EnVariationalDiffusion的normalize
-
 
         categories, charges = h  # (b,n_atom)
         batch_size, n_nodes = categories.shape
         edges = self.get_adj_matrix(n_nodes,batch_size)  # [rows, cols] rows=cols=(batch_size*n_nodes*n_nodes) value in [0,batch_size*n_nodes)
         posterior, distances, edges, node_mask, edge_mask = self.encoder(x, categories, charges, edges, node_mask, edge_mask)
         h = posterior.sample()
-
+        edge_loss = self.edge_pred(edges,edge_mask,h,distances)
         output,_ = self.decoder.decode(h, distances, edges, node_mask, edge_mask)
-
-        return self.compute_loss(categories, output,node_mask,posterior)
+        rec_loss, kl_loss = self.compute_loss(categories, output,node_mask,posterior)
+        return rec_loss, kl_loss,edge_loss
 
     def compute_loss(self, x, x_hat,node_mask,posterior):
         """
@@ -46,21 +59,9 @@ class HyperbolicAE(nn.Module):
 
         n_type = x_hat.size(-1)
         atom_loss_f = nn.CrossEntropyLoss(reduction='none')
-        # rec_loss = atom_loss_f(x_hat.view(-1, n_type), x.view(-1))/b
         rec_loss = atom_loss_f(x_hat.view(-1, n_type), x.view(-1)) * node_mask.squeeze()
         rec_loss = rec_loss.sum()/b
-        # if self.pred_edge:
-        #     edge_loss_f = nn.MSELoss(reduction='mean')
-        #     zeros = torch.zeros_like(edge,device=edge.device)
-        #     ones = torch.ones_like(edge, device=edge.device)
-        #     edge_cutoff = torch.where(edge>5,zeros,ones)
-        #     edge_hat = edge_hat * edge_cutoff
-        #     edge = edge*edge_cutoff
-        #     loss1 = torch.sqrt(edge_loss_f(edge_hat,edge))
-        # else:
-        #     loss1=torch.tensor(0.0,device=loss0.device)
         kl_loss = posterior.kl().mean()
-
         return rec_loss,kl_loss
 
     def get_adj_matrix(self, n_nodes, batch_size):
@@ -84,3 +85,17 @@ class HyperbolicAE(nn.Module):
         else:
             self._edges_dict[n_nodes] = {}
             return self.get_adj_matrix(n_nodes, batch_size)
+
+    def edge_pred(self,edges,edge_mask,h,target_edge):
+        row, col = edges
+        h_row = h[row]
+        h_col = h[col]
+        pred_edge = self.edge_mlp(torch.concat([h_row,h_col],dim=-1)) * edge_mask
+        target_edge = target_edge * edge_mask
+        edge_loss_f = nn.L1Loss(reduction='mean')
+        # zeros = torch.zeros_like(pred_edge,device=pred_edge.device)
+        # ones = torch.ones_like(pred_edge, device=pred_edge.device)
+        # edge_cutoff = torch.where(edge>5,zeros,ones)
+
+        loss1 = edge_loss_f(pred_edge,target_edge)
+        return loss1

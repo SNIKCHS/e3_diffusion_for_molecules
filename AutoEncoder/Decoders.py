@@ -17,13 +17,9 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.c = c
         self.out = nn.Sequential(
-            nn.Linear(args.dim,args.max_z),
+            nn.Linear(args.hidden_dim,args.max_z),
             # nn.Sigmoid()
         )
-        # self.out = nn.Sequential(
-        #     nn.Linear(args.hidden_dim, args.max_z),
-        #     # nn.Sigmoid()
-        # )
         self.pred_edge = args.pred_edge
         self.link_net = DenseAtt(args.dim,args.dropout)
         self.link_out = nn.Linear(args.dim,1)
@@ -34,12 +30,11 @@ class Decoder(nn.Module):
             output, distances, edges, node_mask, edge_mask = self.decoder.forward(input)
         else:
             output = self.decoder.forward(h)
-
+        # print(output[0, :10])
+        output = self.manifold.logmap0(output, c=self.curvatures[-1])
+        # print(output[0,:10])
         node_pred = self.out(output)
 
-        # if self.c is not None:
-        #     output = self.manifold.logmap0(output, self.curvatures[-1])
-        #     output = self.manifold.proj_tan0(output,  self.curvatures[-1])
         if self.pred_edge:
             row, col = edges
             output = self.manifold.logmap0(output, self.curvatures[-1])
@@ -107,9 +102,7 @@ class HGCNDecoder(Decoder):
         super(HGCNDecoder, self).__init__(c, args)
         self.manifold = getattr(manifolds, args.manifold)()
 
-        assert args.num_layers > 0
-
-        dims, acts, self.curvatures = hyp_layers.get_dim_act_curv(args)
+        dims, acts, self.curvatures = hyp_layers.get_dim_act_curv(args,args.dec_layers,enc=False)
         # dims = dims[::-1] # 倒序
         # acts = acts[::-1][:-1] + [lambda x: x]  # Last layer without act
         self.curvatures[0] = c[-1]
@@ -117,13 +110,13 @@ class HGCNDecoder(Decoder):
             self.curvatures = c[::-1]
 
         hgc_layers = []
-        for i in range(args.num_layers):
+        for i in range(args.dec_layers):
             c_in, c_out = self.curvatures[i], self.curvatures[i + 1]
             in_dim, out_dim = dims[i], dims[i + 1]
             act = acts[i]
             hgc_layers.append(
-                hyp_layers.HyperbolicGraphConvolution(
-                    self.manifold, in_dim, out_dim, c_in, c_out, args.dropout, act, args.bias, args.local_agg,
+                hyp_layers.HGCLayer(
+                    self.manifold, in_dim, out_dim, c_in, c_out, args.dropout, act
                 )
             )
 
@@ -134,7 +127,6 @@ class HGCNDecoder(Decoder):
         h = self.manifold.expmap0(
                 self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
             )
-        # h = self.manifold.proj(h,c=self.curvatures[0])
         output = super(HGCNDecoder, self).decode(h, distances, edges, node_mask, edge_mask)
 
         return output
@@ -178,9 +170,9 @@ class HNNDecoder(Decoder):
         h_hyp = self.manifold.expmap0(
                 self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
             )
-        # h_hyp = self.manifold.proj(h_hyp,c=self.curvatures[0])
         h = self.manifold.proj(h_hyp, c=self.curvatures[0])
         output = super(HNNDecoder, self).decode(h, distances, edges, node_mask, edge_mask)
+
 
         return output
 
