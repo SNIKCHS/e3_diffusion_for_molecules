@@ -1,78 +1,110 @@
 import torch
+from torch.distributions import Normal
+import torch.nn.functional as F
 
 
 class DiagonalGaussianDistribution(object):
-    def __init__(self, parameters, manifold=None,node_mask=None):
+    def __init__(self, parameters, manifold=None, node_mask=None):
         self.parameters = parameters
-        self.mean, self.logvar = torch.chunk(parameters, 2, dim=1)
-        self.logvar = torch.clamp(self.logvar, -30.0, 20.0)
+        self.mean, self.std = torch.chunk(parameters, 2, dim=1)
+        # self.logvar = torch.clamp(self.logvar, -20.0, 5.0)
         self.node_mask = node_mask
-        self.std = torch.exp(0.5 * self.logvar)
-        self.var = torch.exp(self.logvar)
+        self.std = F.softplus(self.std)
+        # self.var = torch.exp(self.logvar)
+        eps = torch.finfo(self.std.dtype).eps
+        self.std = torch.clamp(self.std, min=eps, max=4.0)
         self.manifold = manifold
-
+        self.origin = self.manifold.origin((self.mean.size()))
+        if manifold is not None:
+            self.base = Normal(
+                torch.zeros(
+                    self.mean.size(),
+                    device=self.mean.device
+                )[..., 1:],
+                self.std[..., 1:]
+            )
+            #             try:
+            #                 self.base = Normal(
+            #                     torch.zeros(
+            #                         self.mean.size(),
+            #                         device=self.mean.device
+            #                     )[..., 1:],
+            #                     self.std[..., 1:]
+            #                 )
+            #             except ValueError as e:
+            #                 torch.set_printoptions(profile="full")
+            #                 print(self.std)  # prints the whole tensor
+            #                 torch.set_printoptions(profile="default")
+            #                 print(e)
+            self.mean = self.manifold.expmap0(self.proj_tan0(self.mean))
+        else:
+            self.base = Normal(
+                torch.zeros(
+                    self.mean.size(),
+                    device=self.mean.device
+                ),
+                self.std
+            )
 
     def sample(self):
-        x = self.mean + self.std * torch.randn(self.mean.shape).to(device=self.parameters.device)
-        if self.manifold.name == 'Hyperboloid':
-            narrowed = x.narrow(-1, 0, 1)
-            vals = torch.zeros_like(x)
-            vals[:, 0:1] = narrowed
-            x = x - vals
+        if self.manifold is not None:
+            std = self.base.sample()
+            zeros = torch.zeros((std.size(0), 1), device=std.device)
+            std = torch.concat([zeros, std], dim=-1)
+            std = self.manifold.transp0(self.mean, std)
+            x = self.manifold.expmap(self.mean, std)
+        else:
+            x = self.mean + self.base.sample()
 
         x = x * self.node_mask
         return x
 
-    def kl(self):
-        if self.manifold.name == 'Hyperboloid':
-            kl = 0.5 * torch.mean(torch.pow(self.mean[...,1:], 2)
-                               + self.var[...,1:] - 1.0 - self.logvar[...,1:],
-                               dim=-1,keepdim=True)
-        else:
-            kl = 0.5 * torch.mean(torch.pow(self.mean, 2)
-                                 + self.var - 1.0 - self.logvar,
-                                 dim=-1, keepdim=True)
+    def proj_tan0(self, u):
+        return self.manifold.proju(self.origin, u)
 
+    def kl(self, x):
+        log_prob_base = self.log_prob(x)
+        log_prob_target = self.log_prob_prior(x)
+        kl = log_prob_base - log_prob_target
+
+        # kl = 0.5 * torch.mean(torch.pow(self.mean, 2)
+        #                       + self.var - 1.0 - self.logvar,
+        #                       dim=-1, keepdim=True)
         kl = kl * self.node_mask
 
-        return kl.squeeze()
+        return torch.clamp(kl.squeeze(), min=0)
+
+    def log_prob(self, x):
+        u = self.manifold.logmap(self.mean, x)
+        v = self.manifold.transp(self.mean, self.origin, u)
+        log_prob_v = self.base.log_prob(v[:, 1:]).sum(-1)
+
+        r = self.manifold.norm(u)
+        log_det = (u.size(-1) - 1) * (torch.sinh(r).log() - r.log())
+
+        log_prob_z = log_prob_v - log_det
+        return log_prob_z
+
+    def log_prob_prior(self, x):
+        prior_mean = torch.zeros(
+            self.mean.size(),
+            device=self.mean.device
+        )
+        prior_std = torch.ones_like(prior_mean, device=prior_mean.device)
+        prior_base = Normal(
+            prior_mean[..., 1:],
+            prior_std[..., 1:]
+        )
+        u = self.manifold.logmap0(x)
+        log_prob_v = prior_base.log_prob(u[:, 1:]).sum(-1)
+        r = self.manifold.norm(u)
+        log_det = (u.size(-1) - 1) * (torch.sinh(r).log() - r.log())
+
+        log_prob_z = log_prob_v - log_det
+        return log_prob_z
 
     def mode(self):
+
         x = self.mean
-        if self.manifold.name == 'Hyperboloid':
-            narrowed = x.narrow(-1, 0, 1)
-            vals = torch.zeros_like(x)
-            vals[:, 0:1] = narrowed
-            x = x - vals
         x = x * self.node_mask
         return x
-
-
-def normal_kl(mean1, logvar1, mean2, logvar2):
-    """
-    source: https://github.com/openai/guided-diffusion/blob/27c20a8fab9cb472df5d6bdd6c8d11c8f430b924/guided_diffusion/losses.py#L12
-    Compute the KL divergence between two gaussians.
-    Shapes are automatically broadcasted, so batches can be compared to
-    scalars, among other use cases.
-    """
-    tensor = None
-    for obj in (mean1, logvar1, mean2, logvar2):
-        if isinstance(obj, torch.Tensor):
-            tensor = obj
-            break
-    assert tensor is not None, "at least one argument must be a Tensor"
-
-    # Force variances to be Tensors. Broadcasting helps convert scalars to
-    # Tensors, but it does not work for torch.exp().
-    logvar1, logvar2 = [
-        x if isinstance(x, torch.Tensor) else torch.tensor(x).to(tensor)
-        for x in (logvar1, logvar2)
-    ]
-
-    return 0.5 * (
-            -1.0
-            + logvar2
-            - logvar1
-            + torch.exp(logvar1 - logvar2)
-            + ((mean1 - mean2) ** 2) * torch.exp(-logvar2)
-    )

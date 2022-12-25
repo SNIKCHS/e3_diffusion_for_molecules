@@ -17,6 +17,7 @@ import torch
 def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
                    gradnorm_queue, lr_scheduler):
     # torch.autograd.set_detect_anomaly(True)
+    # torch.set_printoptions(profile="full")
     model_dp.train()
     model.train()
     nll_epoch = []
@@ -49,7 +50,9 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
 
         # transform batch through flow
         rec_loss, KL_loss,edge_loss = model_dp(x, h, node_mask, edge_mask)
-        loss = rec_loss + args.ode_regularization*KL_loss+edge_loss
+        loss = rec_loss + args.ode_regularization*KL_loss+args.ode_regularization*edge_loss
+        if torch.isnan(loss):
+            raise AssertionError
         loss.backward()
 
         if args.clip_grad:
@@ -58,21 +61,9 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
             grad_norm = 0.
 
         optim.step()
+        model.show_curvatures()
         if args.lr_scheduler:
             lr_scheduler.step(loss)
-
-        if args.model not in ['MLP', 'GCN'] and args.c is None:
-            # if i % 100 == 0:
-            #     curvatures = list(model.get_submodule('encoder.curvatures'))
-            #     print('encoder:', curvatures)
-            #     curvatures = list(model.get_submodule('decoder.curvatures'))
-            #     print('decoder:', curvatures)
-            en_curvatures = model.get_submodule('encoder.curvatures')
-            for p in en_curvatures.parameters():
-                p.data.clamp_(1e-8)
-            de_curvatures = model.get_submodule('decoder.curvatures')
-            for p in de_curvatures.parameters():
-                p.data.clamp_(1e-8)
 
         # Update EMA if enabled.
         if args.ema_decay > 0:

@@ -1,14 +1,13 @@
-import math
-
+import geoopt
 import torch
 import AutoEncoder.Decoders as Decoders
 import AutoEncoder.Encoders as Encoders
 from torch import nn
-import manifolds
+
 
 def weight_init(m):
     if isinstance(m, nn.Linear):
-        nn.init.xavier_uniform_(m.weight,gain=0.25)
+        nn.init.xavier_uniform_(m.weight,gain=0.1)
         if m.bias is not None:
             nn.init.constant_(m.bias, 0)
 class HyperbolicAE(nn.Module):
@@ -16,10 +15,9 @@ class HyperbolicAE(nn.Module):
     def __init__(self, args):
         super(HyperbolicAE, self).__init__()
         self.device = args.device
-        self.manifold = getattr(manifolds, args.manifold)()  # 选择相应的流形
         self.encoder = getattr(Encoders, args.model)(args)
-        c = self.encoder.curvatures if hasattr(self.encoder, 'curvatures') else args.c
-        self.decoder = Decoders.model2decoder[args.model](c, args)
+        manifolds = self.encoder.manifolds
+        self.decoder = Decoders.model2decoder[args.model](manifolds, args)
         self.args = args
         self._edges_dict = {}
         self.pred_edge = args.pred_edge
@@ -41,14 +39,15 @@ class HyperbolicAE(nn.Module):
         categories, charges = h  # (b,n_atom)
         batch_size, n_nodes = categories.shape
         edges = self.get_adj_matrix(n_nodes,batch_size)  # [rows, cols] rows=cols=(batch_size*n_nodes*n_nodes) value in [0,batch_size*n_nodes)
-        posterior, distances, edges, node_mask, edge_mask = self.encoder(x, categories, charges, edges, node_mask, edge_mask)
+        posterior, distances, edges, node_mask, edge_mask = self.encoder(x, categories, edges, node_mask, edge_mask)
         h = posterior.sample()
         edge_loss = self.edge_pred(edges,edge_mask,h,distances)
-        output,_ = self.decoder.decode(h, distances, edges, node_mask, edge_mask)
-        rec_loss, kl_loss = self.compute_loss(categories, output,node_mask,posterior)
+        output = self.decoder.decode(h, distances, edges, node_mask, edge_mask)
+        rec_loss = self.compute_loss(categories, output,node_mask)
+        kl_loss = posterior.kl(h).mean()
         return rec_loss, kl_loss,edge_loss
 
-    def compute_loss(self, x, x_hat,node_mask,posterior):
+    def compute_loss(self, x, x_hat,node_mask):
         """
         auto-encoder的损失
         :param x: encoder的输入 原子类别（0~5）
@@ -61,8 +60,7 @@ class HyperbolicAE(nn.Module):
         atom_loss_f = nn.CrossEntropyLoss(reduction='none')
         rec_loss = atom_loss_f(x_hat.view(-1, n_type), x.view(-1)) * node_mask.squeeze()
         rec_loss = rec_loss.sum()/b
-        kl_loss = posterior.kl().mean()
-        return rec_loss,kl_loss
+        return rec_loss
 
     def get_adj_matrix(self, n_nodes, batch_size):
         # 对每个n_nodes，batch_size只要算一次
@@ -99,3 +97,8 @@ class HyperbolicAE(nn.Module):
 
         loss1 = edge_loss_f(pred_edge,target_edge)
         return loss1
+    def show_curvatures(self):
+        c = [m.k for m in self.encoder.manifolds]
+        c.append([m.k for m in self.decoder.manifolds])
+        print(c)
+

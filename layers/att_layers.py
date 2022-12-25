@@ -32,7 +32,7 @@ class DenseAtt(nn.Module):
             nn.Linear(in_features, 1),
             nn.Sigmoid()
         )
-        self.in_features = in_features
+
 
     def forward (self, x_left, x_right, distances, edge_mask):
         """
@@ -46,7 +46,6 @@ class DenseAtt(nn.Module):
         Returns
         -------
         """
-        #prepare gauss kernel distance
 
         distances = distances * edge_mask
         x_cat = torch.concat((x_left, x_right,distances), dim=1)  # (b*n*n,2*dim+1)

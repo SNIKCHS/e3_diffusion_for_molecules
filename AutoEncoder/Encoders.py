@@ -28,7 +28,7 @@ class Encoder(nn.Module):
         self.mean_logvar = nn.Linear(args.dim,2*args.dim)
 
 
-    def forward(self, x, categories, charges, edges, node_mask, edge_mask):
+    def forward(self, x, categories, edges, node_mask, edge_mask):
         h = self.embedding(categories)  # (b,n_atom,n_atom_embed)
         b, n_nodes, _ = h.shape
 
@@ -38,14 +38,12 @@ class Encoder(nn.Module):
         h = h.view(b * n_nodes, -1) * node_mask  # (b*n_atom,n_atom_embed+1)
 
         distances, _ = coord2diff(x, edges)  # (b*n_node*n_node,1)
-        h = self.manifold.proj_tan0(h, self.curvatures[0])
-        h = self.manifold.expmap0(h, self.curvatures[0])
 
         output, distances, edges, node_mask, edge_mask = self.encode(h, distances, edges, node_mask, edge_mask)
+        if torch.any(torch.isnan(output)):
+            print('ENCoutput nan')
         parameters = self.mean_logvar(output)
-        posterior = DiagonalGaussianDistribution(parameters,self.manifold,node_mask)
-
-        # output = output * node_mask
+        posterior = DiagonalGaussianDistribution(parameters,self.manifolds[-1],node_mask)
 
         return posterior, distances, edges, node_mask, edge_mask
 
@@ -148,16 +146,16 @@ class HGCN(Encoder):
 
     def __init__(self, args):  # , use_cnn
         super(HGCN, self).__init__(args)
-        self.manifold = getattr(manifolds, args.manifold)()
-        dims, acts, self.curvatures = get_dim_act_curv(args,args.enc_layers)
+
+        dims, acts, self.manifolds = get_dim_act_curv(args,args.enc_layers)
         hgc_layers = []
         for i in range(args.enc_layers):
-            c_in, c_out = self.curvatures[i], self.curvatures[i + 1]
+            m_in, m_out = self.manifolds[i], self.manifolds[i + 1]
             in_dim, out_dim = dims[i], dims[i + 1]
             act = acts[i]
             hgc_layers.append(
                 HGCLayer(
-                    self.manifold, in_dim, out_dim, c_in, c_out, args.dropout, act
+                    in_dim, out_dim, m_in, m_out, args.dropout, act
                 )
             )
         self.layers = nn.Sequential(*hgc_layers)
@@ -168,18 +166,11 @@ class HGCN(Encoder):
         #     self.norm = nn.LayerNorm(args.dim)
 
     def encode(self, h, distances, edges, node_mask, edge_mask):
-        # h_hyp = self.manifold.proj(
-        #     self.manifold.expmap0(
-        #         self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
-        #     ),
-        #     c=self.curvatures[0]
-        # )
-
+        h = self.proj_tan0(self.manifolds[0],h)
+        h = self.manifolds[0].expmap0(h)
         output, distances, edges, node_mask, edge_mask = super(HGCN, self).encode(h, distances, edges, node_mask, edge_mask)
 
-        output = self.manifold.proj_tan0(
-            self.manifold.logmap0(output, self.curvatures[-1]),
-            c=self.curvatures[-1]
-        )
+        output = self.proj_tan0(self.manifolds[-1],self.manifolds[-1].logmap0(output))
         return output, distances, edges, node_mask, edge_mask
-
+    def proj_tan0(self,manifold,u):
+        return manifold.proju(manifold.origin((u.size())),u)

@@ -20,10 +20,10 @@ import numpy as np
 
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='AE_HGCN')
+parser.add_argument('--exp_name', type=str, default='AE_HGCN_geoopt_lowedgeloss')
 
 parser.add_argument('--n_epochs', type=int, default=200)
-parser.add_argument('--batch_size', type=int, default=128)
+parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--dropout', type=float, default=0)
 parser.add_argument('--dim', type=int, default=20)
@@ -52,7 +52,7 @@ parser.add_argument('--break_train_epoch', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--dp', type=eval, default=False,
                     help='True | False')
-parser.add_argument('--clip_grad', type=eval, default=True,
+parser.add_argument('--clip_grad', type=eval, default=False,
                     help='True | False')
 
 parser.add_argument('--wandb_usr', type=str,default='elma')
