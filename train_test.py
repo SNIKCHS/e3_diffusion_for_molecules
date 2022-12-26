@@ -50,7 +50,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
 
         # transform batch through flow
         rec_loss, KL_loss,edge_loss = model_dp(x, h, node_mask, edge_mask)
-        loss = rec_loss + args.ode_regularization*KL_loss+args.ode_regularization*edge_loss
+        loss = rec_loss + args.ode_regularization*KL_loss+edge_loss
         if torch.isnan(loss):
             raise AssertionError
         loss.backward()

@@ -96,17 +96,17 @@ class HGCLayer(nn.Module):
         h, distances, edges, node_mask, edge_mask = input
 
         h = self.HypLinear(h)
-        if torch.any(torch.isnan(h)):
-            print('HypLinear nan')
+        # if torch.any(torch.isnan(h)):
+        #     print('HypLinear nan')
         h = self.HypAgg(h, distances, edges, node_mask, edge_mask)
-        if torch.any(torch.isnan(h)):
-            print('HypAgg nan')
+        # if torch.any(torch.isnan(h)):
+        #     print('HypAgg nan')
         h = self.HNorm(h)
-        if torch.any(torch.isnan(h)):
-            print('HNorm nan')
+        # if torch.any(torch.isnan(h)):
+        #     print('HNorm nan')
         h = self.HypAct(h)
-        if torch.any(torch.isnan(h)):
-            print('HypAct nan')
+        # if torch.any(torch.isnan(h)):
+        #     print('HypAct nan')
         output = (h, distances, edges, node_mask, edge_mask)
         return output
 
