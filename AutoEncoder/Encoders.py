@@ -4,7 +4,6 @@ from torch import nn
 from AutoEncoder.distributions import DiagonalGaussianDistribution
 from layers.hyp_layers import get_dim_act_curv, HNNLayer, HGCLayer
 from layers.layers import get_dim_act, GraphConvolution, Linear
-import manifolds
 
 
 def coord2diff(x, edge_index, norm_constant=1):
@@ -56,87 +55,87 @@ class Encoder(nn.Module):
         return output, distances, edges, node_mask, edge_mask
 
 
-class MLP(Encoder):
-    """
-    Multi-layer perceptron.
-    """
-
-    def __init__(self, args):
-        super(MLP, self).__init__(args)
-        assert args.num_layers > 0
-        self.manifold = getattr(manifolds, args.manifold)()
-        dims, acts = get_dim_act(args)
-        layers = []
-        for i in range(args.num_layers):
-            in_dim, out_dim = dims[i], dims[i + 1]
-            act = acts[i]
-            layers.append(Linear(in_dim, out_dim, args.dropout, act, args.bias))
-        self.layers = nn.Sequential(*layers)
-        self.message_passing = False
-        self.norm = nn.LayerNorm(args.dim)
-
-
-class HNN(Encoder):
-    """
-    Hyperbolic Neural Networks.
-    """
-
-    def __init__(self, args):
-        super(HNN, self).__init__(args)
-
-        self.manifold = getattr(manifolds, args.manifold)()
-        assert args.num_layers > 1
-        dims, acts, self.curvatures = get_dim_act_curv(args)
-        hnn_layers = []
-        for i in range(args.num_layers):
-            c_in, c_out = self.curvatures[i], self.curvatures[i + 1]
-            in_dim, out_dim = dims[i], dims[i + 1]
-            act = acts[i]
-            hnn_layers.append(
-                HNNLayer(self.manifold, in_dim, out_dim, c_in, c_out, args.dropout, act, args.bias)
-            )
-        self.layers = nn.Sequential(*hnn_layers)
-        self.message_passing = False
-        if self.manifold.name == 'Hyperboloid':
-            self.norm = nn.LayerNorm(args.dim - 1)
-        else:
-            self.norm = nn.LayerNorm(args.dim)
-
-    def encode(self, h, distances, edges, node_mask, edge_mask):
-        h_hyp = self.manifold.proj(
-            self.manifold.expmap0(
-                self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
-            ),
-            c=self.curvatures[0]
-        )
-
-        output, distances, edges, node_mask, edge_mask = super(HNN, self).encode( h_hyp, distances, edges, node_mask, edge_mask)
-
-        output = self.manifold.proj_tan0(
-            self.manifold.logmap0(output, self.curvatures[-1]),
-            c=self.curvatures[-1]
-        )
-        return output, distances, edges, node_mask, edge_mask
-
-
-class GCN(Encoder):
-    """
-    Graph Convolution Networks.
-    """
-
-    def __init__(self, args):
-        super(GCN, self).__init__(args)
-        assert args.num_layers > 0
-        self.manifold = getattr(manifolds, args.manifold)()
-        dims, acts = get_dim_act(args)
-        gc_layers = []
-        for i in range(args.num_layers):
-            in_dim, out_dim = dims[i], dims[i + 1]
-            act = acts[i]
-            gc_layers.append(GraphConvolution(in_dim, out_dim, args.dropout, act, args.bias))
-        self.layers = nn.Sequential(*gc_layers)
-        self.message_passing = True
-        self.norm = nn.LayerNorm(args.dim)
+# class MLP(Encoder):
+#     """
+#     Multi-layer perceptron.
+#     """
+#
+#     def __init__(self, args):
+#         super(MLP, self).__init__(args)
+#         assert args.num_layers > 0
+#         self.manifold = getattr(manifolds, args.manifold)()
+#         dims, acts = get_dim_act(args)
+#         layers = []
+#         for i in range(args.num_layers):
+#             in_dim, out_dim = dims[i], dims[i + 1]
+#             act = acts[i]
+#             layers.append(Linear(in_dim, out_dim, args.dropout, act, args.bias))
+#         self.layers = nn.Sequential(*layers)
+#         self.message_passing = False
+#         self.norm = nn.LayerNorm(args.dim)
+#
+#
+# class HNN(Encoder):
+#     """
+#     Hyperbolic Neural Networks.
+#     """
+#
+#     def __init__(self, args):
+#         super(HNN, self).__init__(args)
+#
+#         self.manifold = getattr(manifolds, args.manifold)()
+#         assert args.num_layers > 1
+#         dims, acts, self.curvatures = get_dim_act_curv(args)
+#         hnn_layers = []
+#         for i in range(args.num_layers):
+#             c_in, c_out = self.curvatures[i], self.curvatures[i + 1]
+#             in_dim, out_dim = dims[i], dims[i + 1]
+#             act = acts[i]
+#             hnn_layers.append(
+#                 HNNLayer(self.manifold, in_dim, out_dim, c_in, c_out, args.dropout, act, args.bias)
+#             )
+#         self.layers = nn.Sequential(*hnn_layers)
+#         self.message_passing = False
+#         if self.manifold.name == 'Hyperboloid':
+#             self.norm = nn.LayerNorm(args.dim - 1)
+#         else:
+#             self.norm = nn.LayerNorm(args.dim)
+#
+#     def encode(self, h, distances, edges, node_mask, edge_mask):
+#         h_hyp = self.manifold.proj(
+#             self.manifold.expmap0(
+#                 self.manifold.proj_tan0(h, self.curvatures[0]), c=self.curvatures[0]
+#             ),
+#             c=self.curvatures[0]
+#         )
+#
+#         output, distances, edges, node_mask, edge_mask = super(HNN, self).encode( h_hyp, distances, edges, node_mask, edge_mask)
+#
+#         output = self.manifold.proj_tan0(
+#             self.manifold.logmap0(output, self.curvatures[-1]),
+#             c=self.curvatures[-1]
+#         )
+#         return output, distances, edges, node_mask, edge_mask
+#
+#
+# class GCN(Encoder):
+#     """
+#     Graph Convolution Networks.
+#     """
+#
+#     def __init__(self, args):
+#         super(GCN, self).__init__(args)
+#         assert args.num_layers > 0
+#         self.manifold = getattr(manifolds, args.manifold)()
+#         dims, acts = get_dim_act(args)
+#         gc_layers = []
+#         for i in range(args.num_layers):
+#             in_dim, out_dim = dims[i], dims[i + 1]
+#             act = acts[i]
+#             gc_layers.append(GraphConvolution(in_dim, out_dim, args.dropout, act, args.bias))
+#         self.layers = nn.Sequential(*gc_layers)
+#         self.message_passing = True
+#         self.norm = nn.LayerNorm(args.dim)
 
 
 class HGCN(Encoder):

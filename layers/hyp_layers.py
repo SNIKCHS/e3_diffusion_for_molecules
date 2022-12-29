@@ -38,7 +38,6 @@ def get_dim_act_curv(args,num_layers,enc = True):
 
     return dims, acts, manifolds
 
-
 class HNNLayer(nn.Module):
     """
     Hyperbolic neural networks layer.
@@ -61,7 +60,7 @@ class HNNLayer(nn.Module):
         return h
 
 class HGCLayer(nn.Module):
-    def __init__(self, in_features, out_features, manifold_in, manifold_out, dropout, act):
+    def __init__(self, in_features, out_features, manifold_in, manifold_out, dropout, act,edge_dim=2):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -72,7 +71,7 @@ class HGCLayer(nn.Module):
 
         self.normalization_factor = 1000
         self.aggregation_method = 'sum'
-        self.att = DenseAtt(out_features,dropout=dropout, edge_dim=2)
+        self.att = DenseAtt(out_features,dropout=dropout, edge_dim=edge_dim)
         self.node_mlp = nn.Sequential(
             nn.Linear(out_features, out_features),
             nn.LayerNorm(out_features),
@@ -93,12 +92,12 @@ class HGCLayer(nn.Module):
         init.constant_(self.bias, 0.1)
 
     def forward(self, input):
-        h, distances, edges, node_mask, edge_mask = input
+        h, edge_attr, edges, node_mask, edge_mask = input
 
         h = self.HypLinear(h)
         # if torch.any(torch.isnan(h)):
         #     print('HypLinear nan')
-        h = self.HypAgg(h, distances, edges, node_mask, edge_mask)
+        h = self.HypAgg(h, edge_attr, edges, node_mask, edge_mask)
         # if torch.any(torch.isnan(h)):
         #     print('HypAgg nan')
         h = self.HNorm(h)
@@ -107,7 +106,7 @@ class HGCLayer(nn.Module):
         h = self.HypAct(h)
         # if torch.any(torch.isnan(h)):
         #     print('HypAct nan')
-        output = (h, distances, edges, node_mask, edge_mask)
+        output = (h, edge_attr, edges, node_mask, edge_mask)
         return output
 
     def HypLinear(self, x):
@@ -121,7 +120,7 @@ class HGCLayer(nn.Module):
         res = self.manifold_in.expmap(x, bias)
         return res
 
-    def HypAgg(self, x, distances, edges, node_mask, edge_mask):
+    def HypAgg(self, x, edge_attr, edges, node_mask, edge_mask):
         x_tangent = self.manifold_in.logmap0(x)  # (b*n_node,dim)
 
         row, col = edges  # 0,0,0...0,1 0,1,2..,0
@@ -129,8 +128,8 @@ class HGCLayer(nn.Module):
         x_tangent_col = x_tangent[col]
 
         geodesic = self.manifold_in.dist(x[row], x[col],keepdim=True)
-        distances = torch.cat([distances,geodesic],dim=-1)
-        att = self.att(x_tangent_row, x_tangent_col, distances, edge_mask)  # (b*n_node*n_node,dim)
+        edge_attr = torch.cat([edge_attr,geodesic],dim=-1)
+        att = self.att(x_tangent_row, x_tangent_col, edge_attr, edge_mask)  # (b*n_node*n_node,dim)
         x_local_tangent = self.manifold_in.logmap(x[row], x[col])  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
         agg = x_local_tangent * att
         out = unsorted_segment_sum(agg, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
@@ -194,34 +193,29 @@ class HypLinear(nn.Module):
     output in manifold
     """
 
-    def __init__(self, manifold, in_features, out_features, c, dropout, use_bias):
+    def __init__(self, in_features, out_features, manifold, dropout=0):
         super(HypLinear, self).__init__()
-        self.manifold = manifold
         self.in_features = in_features
         self.out_features = out_features
-        self.c = c
-        self.dropout = dropout
-        self.use_bias = use_bias
+        self.manifold = manifold
         self.bias = nn.Parameter(torch.Tensor(1, out_features))
-        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.linear = nn.Linear(in_features, out_features, bias=False)
 
         self.reset_parameters()
 
     def reset_parameters(self):
-        init.xavier_uniform_(self.weight, gain=0.25)
+        init.xavier_uniform_(self.linear.weight, gain=0.25)
         init.constant_(self.bias, 0)
-
+    def proj_tan0(self,manifold,u):
+        return manifold.proju(manifold.origin((u.size())),u)
     def forward(self, x):
-        drop_weight = F.dropout(self.weight, self.dropout, training=self.training)
-        res = self.manifold.mobius_matvec(drop_weight, x, self.c)  # x先log到切空间与drop_weight相乘再exp到manifold
-        # res = self.manifold.proj(res, self.c) #hyperbolid的expmap0结束后有proj
-
-        if self.use_bias:
-            bias = self.manifold.proj_tan0(self.bias.view(1, -1), self.c)
-            hyp_bias = self.manifold.expmap0(bias, self.c)
-            # hyp_bias = self.manifold.proj(hyp_bias, self.c)
-            res = self.manifold.mobius_add(res, hyp_bias, c=self.c)
-            # res = self.manifold.proj(res, self.c)
+        x = self.manifold.logmap0(x)
+        x = self.linear(x)
+        x = self.proj_tan0(self.manifold, x)
+        x = self.manifold.expmap0(x)
+        bias = self.proj_tan0(self.manifold, self.bias.view(1, -1))
+        bias = self.manifold.transp0(x, bias)
+        res = self.manifold.expmap(x, bias)
 
         return res
 

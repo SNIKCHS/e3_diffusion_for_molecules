@@ -145,14 +145,7 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
                   f"Loss {loss.item():.4f}, NLL: {nll.item():.4f}, "
                   f"RegTerm: {reg_term.item():.1f}, "
                   f"GradNorm: {grad_norm:.1f}, abs_z: {mean_abs_z.item():.6f}")
-        if args.hyp:
-            curvatures_module = model.get_submodule('dynamics.egnn.curvatures')
-            if i % 100 == 0:
-                curvatures = list(curvatures_module)
-                curvatures = torch.tensor([x.item() for x in curvatures])
-                print(curvatures)
-            for p in curvatures_module.parameters():
-                p.data.clamp_(1e-8)
+
         nll_epoch.append(nll.item())
         wandb.log({"Batch NLL": nll.item(), 'abs_z': mean_abs_z.item()}, commit=True)
         if args.break_train_epoch:
