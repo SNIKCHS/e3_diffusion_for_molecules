@@ -970,7 +970,8 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             error = sum_except_batch((eps - eps_t) ** 2)
         return error
     def proj_tan0(self, u):
-        return self.manifold.proju(self.manifold.origin((u.size())), u)
+        u[...,0] = 0.0
+        return u
     def sample_combined_position_feature_noise(self, n_samples, n_nodes, node_mask):
         """
         Samples mean-centered normal noise for z_x, and standard normal noise for z_h.
@@ -1157,22 +1158,29 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         # Neural net prediction.
 
         eps_t = self.phi(zt, t, node_mask, edge_mask, context)  # tan0
-        print('eps_t:',eps_t[:3,:3])
+        print('eps_t:',torch.max(eps_t.view(-1)),torch.min(eps_t.view(-1)))
+        print('zt:', torch.max(zt.view(-1)), torch.min(zt.view(-1)))
         # Compute mu for p(zs | zt).
         mu_x = zt[...,:self.n_dims] / alpha_t_given_s - (sigma2_t_given_s / alpha_t_given_s / sigma_t) * eps_t[...,:self.n_dims]
-        mu_h = self.manifold.expmap0(self.manifold.logmap0(zt[..., self.n_dims:]) / alpha_t_given_s)
-        print('mu_h', mu_h[:3, :3])
-        noise_pt = self.manifold.transp0(mu_h, - (sigma2_t_given_s / alpha_t_given_s / sigma_t) * eps_t[..., self.n_dims:])
-        print('noise_pt',noise_pt[:3, :3])
-        mu_h = self.manifold.expmap(mu_h, noise_pt)
 
+
+        # mu_h = self.manifold.expmap0(self.manifold.logmap0(zt[..., self.n_dims:]) / alpha_t_given_s)
+
+        mu_h = zt[..., self.n_dims:]
+        noise_hyp = self.manifold.expmap0((sigma2_t_given_s / sigma_t) * eps_t[..., self.n_dims:])
+        mu_h_tan_y = self.manifold.logmap(noise_hyp,mu_h)
+        mu_h_tan_0 = self.manifold.transp0back(noise_hyp, mu_h_tan_y)
+
+        temp = self.proj_tan0(mu_h_tan_0) / alpha_t_given_s
+        mu_h = self.manifold.expmap0(temp)
+        print('pt_mu_h:max:', torch.max(mu_h.view(-1)),'min:', torch.min(mu_h.view(-1)))
         mu = torch.concat([mu_x,mu_h],dim=-1)
         # Compute sigma for p(zs | zt).
         sigma = sigma_t_given_s * sigma_s / sigma_t
 
         # Sample zs given the paramters derived from zt.
         zs = self.sample_normal(mu, sigma, node_mask, fix_noise)
-        print('zs',zs[:3,:3])
+        print('sample_zs:max:', torch.max(zs.view(-1)),'min:', torch.min(zs.view(-1)))
         zs_to_loop = torch.cat(
             [diffusion_utils.remove_mean_with_mask(zs[:, :, :self.n_dims],
                                                    node_mask),
@@ -1237,7 +1245,9 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             z = self.sample_combined_position_feature_noise(n_samples, n_nodes, node_mask)
 
         diffusion_utils.assert_mean_zero_with_mask(z[:, :, :self.n_dims], node_mask)
+        print('zT:', torch.max(z.view(-1)), torch.min(z.view(-1)))
         z[:, :, self.n_dims:] = self.manifold.expmap0(z[:, :, self.n_dims:])
+        print('zexp:', torch.max(z.view(-1)), torch.min(z.view(-1)))
         # Iteratively sample p(z_s | z_t) for t = 1, ..., T, with s = t - 1.
         for s in reversed(range(0, self.T)):
 
@@ -1245,8 +1255,9 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             t_array = s_array + 1
             s_array = s_array / self.T
             t_array = t_array / self.T
+            print('z_beg:', torch.max(z.view(-1)), torch.min(z.view(-1)))
             _, z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context, fix_noise=fix_noise)
-            print('sample:', s,z[:3,:3])
+            print('z_end:', torch.max(z.view(-1)), torch.min(z.view(-1)))
 
         # Finally sample p(x, h | z_0).
         x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context, fix_noise=fix_noise)

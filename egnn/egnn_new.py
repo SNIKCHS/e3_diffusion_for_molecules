@@ -71,34 +71,7 @@ class GCL(nn.Module):
             h = h * node_mask
         return h, mij
 
-class HGCL(nn.Module):
-    def __init__(self, input_nf, output_nf, c_in, c_out, act_fn=nn.SiLU(),manifold='Hyperboloid',edges_in_d=2):
-        super(HGCL, self).__init__()
-        self.manifold = getattr(manifolds, manifold)()
-        # self.hgcl = HyperbolicGraphConvolution(self.manifold, input_nf, output_nf, c_in, c_out, dropout=0, act=act_fn, use_bias=1, local_agg=1,edge_dim=edges_in_d)
-        self.norm = HypNorm(self.manifold, input_nf, c_in)
-        self.linear = HypLinear(self.manifold, input_nf, output_nf, c_in, dropout=0, use_bias=1)
-        self.agg = HypAgg(self.manifold, c_in, output_nf, dropout=0, local_agg=True, edge_dim=edges_in_d)
-        self.hyp_act = HypAct(self.manifold, c_in, c_out, act_fn)
-        self.norm1 = HypNorm(self.manifold, output_nf, c_in)
 
-    def forward(self, h, edge_index, edge_attr=None, node_attr=None, node_mask=None, edge_mask=None):
-        # if torch.any(torch.isnan(h)):
-        #     print('input nan')
-        h = self.norm(h)
-        # if torch.any(torch.isnan(h)):
-        #     print('norm0 nan')
-        h = self.linear.forward(h)
-        # if torch.any(torch.isnan(h)):
-        #     print('linear nan')
-        h = self.agg.forward(h, edge_attr, edge_index, node_mask, edge_mask)
-        # if torch.any(torch.isnan(h)):
-        #     print('agg nan')
-        h = self.hyp_act.forward(h)
-        # if torch.any(torch.isnan(h)):
-        #     print('act nan')
-
-        return h, None
 
 class EquivariantUpdate(nn.Module):
     def __init__(self, hidden_nf, normalization_factor, aggregation_method,
@@ -288,10 +261,14 @@ class EGNN(nn.Module):
         h = self.embedding_out(h)
         if self.hyp:
             h = self.manifold.logmap0(h)
-        print('hout:', h, h[:3])
+            h = self.proj_tan0(h)
+        # print('hout:', h, h[:3])
         if node_mask is not None:
             h = h * node_mask
         return h, x
+    def proj_tan0(self, u):
+        u[...,0] = 0.0
+        return u
 
 
 class GNN(nn.Module):
