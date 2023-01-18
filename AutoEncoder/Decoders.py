@@ -18,8 +18,7 @@ class Decoder(nn.Module):
             # nn.Sigmoid()
         )
         self.pred_edge = args.pred_edge
-        self.link_net = DenseAtt(args.dim,args.dropout)
-        self.link_out = nn.Linear(args.dim,1)
+
 
     def decode(self, h, distances, edges, node_mask, edge_mask):
         if self.decode_adj:
@@ -105,8 +104,9 @@ class HGCNDecoder(Decoder):
 
     def decode(self, h, distances, edges, node_mask, edge_mask):
         # h = self.proj_tan0(self.manifolds[0], h)
-        # h = self.manifolds[0].expmap0(h)
+        h = self.manifolds[0].expmap0(h)
         output = super(HGCNDecoder, self).decode(h, distances, edges, node_mask, edge_mask)
+
         return output
 
 

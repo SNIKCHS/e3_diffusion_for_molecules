@@ -1,4 +1,3 @@
-import geoopt
 import torch
 import AutoEncoder.Decoders as Decoders
 import AutoEncoder.Encoders as Encoders
@@ -42,9 +41,13 @@ class HyperbolicAE(nn.Module):
         posterior, distances, edges, node_mask, edge_mask = self.encoder(x, categories, edges, node_mask, edge_mask)
         h = posterior.sample()
         edge_loss = self.edge_pred(edges,edge_mask,h,distances)
+        # if torch.any(torch.isnan(h)):
+        #     print('posterior nan')
         output = self.decoder.decode(h, distances, edges, node_mask, edge_mask)
+        # if torch.any(torch.isnan(output)):
+        #     print('output nan')
         rec_loss = self.compute_loss(categories, output,node_mask)
-        kl_loss = posterior.kl(h).mean()
+        kl_loss = posterior.kl().mean()
         return rec_loss, kl_loss,edge_loss
 
     def compute_loss(self, x, x_hat,node_mask):
@@ -90,12 +93,12 @@ class HyperbolicAE(nn.Module):
         h_col = h[col]
         pred_edge = self.edge_mlp(torch.concat([h_row,h_col],dim=-1)) * edge_mask
         target_edge = target_edge * edge_mask
-        edge_loss_f = nn.L1Loss(reduction='mean')
+        edge_loss_f = nn.MSELoss(reduction='mean')
         # zeros = torch.zeros_like(pred_edge,device=pred_edge.device)
         # ones = torch.ones_like(pred_edge, device=pred_edge.device)
         # edge_cutoff = torch.where(edge>5,zeros,ones)
 
-        loss1 = edge_loss_f(pred_edge,target_edge)
+        loss1 = torch.sqrt_(edge_loss_f(pred_edge,target_edge))
         return loss1
     def show_curvatures(self):
         c = [m.k for m in self.encoder.manifolds]

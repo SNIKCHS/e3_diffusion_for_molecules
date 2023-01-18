@@ -57,7 +57,7 @@ def augment(adj, features, normalize_feats=True):
 
 
 def mask_edges(adj, val_prop, test_prop, seed):
-    np.random.seed(seed)  # get tp edges
+    # np.random.seed(seed)  # get tp edges
     x, y = sp.triu(adj).nonzero()
     pos_edges = np.array(list(zip(x, y)))
     np.random.shuffle(pos_edges)
@@ -80,7 +80,7 @@ def mask_edges(adj, val_prop, test_prop, seed):
 
 
 def split_data(labels, val_prop, test_prop, seed):
-    np.random.seed(seed)
+    # np.random.seed(seed)
     nb_nodes = labels.shape[0]
     all_idx = np.arange(nb_nodes)
     pos_idx = labels.nonzero()[0]

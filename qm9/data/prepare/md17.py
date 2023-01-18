@@ -86,7 +86,7 @@ def gen_splits_md17(num_pts):
     Generate the splits used to train/evaluate the network in the original Cormorant paper.
     """
     # deterministically generate random split based upon random permutation
-    np.random.seed(0)
+    # np.random.seed(0)
     data_perm = np.random.permutation(num_pts)
 
     # Create masks for which splits to invoke

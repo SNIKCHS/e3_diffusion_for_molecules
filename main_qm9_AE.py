@@ -1,5 +1,8 @@
 # Rdkit import should be first, do not move it
 import os
+import random
+
+import numpy as np
 
 from AutoEncoder.AutoEncoder import HyperbolicAE
 
@@ -38,9 +41,9 @@ parser.add_argument('--diffusion_noise_schedule', type=str, default='polynomial_
 parser.add_argument('--diffusion_noise_precision', type=float, default=1e-5,
                     )
 parser.add_argument('--diffusion_loss_type', type=str, default='l2',
-                    help='vlb, l2')
-
-parser.add_argument('--n_epochs', type=int, default=1000)
+                    help='vlb, exil2')
+parser.add_argument('--seed', type=int, default=1)
+parser.add_argument('--n_epochs', type=int, default=10)
 parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--brute_force', type=eval, default=False,
@@ -90,8 +93,7 @@ parser.add_argument('--n_report_steps', type=int, default=1)
 parser.add_argument('--wandb_usr', type=str,default='elma')
 parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
-parser.add_argument('--no-cuda', action='store_true', default=False,
-                    help='enables CUDA training')
+parser.add_argument('--cuda', type=str, default='cuda:1')
 parser.add_argument('--save_model', type=eval, default=True,
                     help='save model')
 parser.add_argument('--generate_epochs', type=int, default=1,
@@ -116,13 +118,21 @@ parser.add_argument('--normalize_factors', type=eval, default=[1, 1, 1],
 parser.add_argument('--remove_h', action='store_true')
 parser.add_argument('--include_charges', type=eval, default=True,
                     help='include atom charge or not')
-parser.add_argument('--visualize_epoch', type=int, default=1,
+parser.add_argument('--visualize_epoch', type=int, default=10,
                     help="Can be used to visualize multiple times per epoch")
 parser.add_argument('--normalization_factor', type=float, default=1,
                     help="Normalize the sum aggregation of EGNN")
 parser.add_argument('--aggregation_method', type=str, default='sum',
                     help='"sum" or "mean"')
 args = parser.parse_args()
+def setup_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+# 设置随机数种子
+setup_seed(args.seed)
 
 dataset_info = get_dataset_info(args.dataset, args.remove_h)
 
@@ -132,10 +142,9 @@ atom_decoder = dataset_info['atom_decoder']
 # args, unparsed_args = parser.parse_known_args()
 
 
-args.cuda = not args.no_cuda and torch.cuda.is_available()
-device = torch.device("cuda" if args.cuda else "cpu")
-dtype = torch.float32
-
+device = torch.device(args.cuda)
+dtype = torch.float64
+torch.set_default_tensor_type(torch.DoubleTensor)
 if args.resume is not None:
     exp_name = args.exp_name + '_resume'
     start_epoch = args.start_epoch
@@ -203,8 +212,8 @@ else:
 args.context_node_nf = context_node_nf
 
 
-AE_state_dict = torch.load('outputs/AE_HGCN_modif/AE_ema.npy')
-with open('outputs/AE_HGCN_modif/args.pickle', 'rb') as f:
+AE_state_dict = torch.load('outputs/AE_HGCN_geoopt/AE_ema.npy')
+with open('outputs/AE_HGCN_geoopt/args.pickle', 'rb') as f:
     AE_args = pickle.load(f)
 AE_args.dropout = 0
 AutoEncoder = HyperbolicAE(AE_args)
@@ -244,9 +253,9 @@ def main():
     #     model.load_state_dict(flow_state_dict)
     #     optim.load_state_dict(optim_state_dict)
     # args.start_epoch = 423
-    flow_state_dict = torch.load('outputs/Diffusion_AE_HGCN_modif/generative_model.npy')
+    # flow_state_dict = torch.load('outputs/Diffusion_AE_HGCN_modif/generative_model_0.npy')
     # optim_state_dict = torch.load('outputs/Diffusion_AE_HGCN_modif/optim.npy')
-    model.load_state_dict(flow_state_dict,False)
+    # model.load_state_dict(flow_state_dict,False)
     # optim.load_state_dict(optim_state_dict)
 
     # Initialize dataparallel if enabled and possible.
@@ -284,18 +293,18 @@ def main():
     # vis.visualize_chain(f"outputs/{args.exp_name}/epoch_{epoch}_/chain/", dataset_info, wandb=wandb)
     #
     # exit(0)
-    analyze_and_save(args=args, epoch=0, model_sample=model_ema, nodes_dist=nodes_dist,
-                     dataset_info=dataset_info, device=device,
-                     prop_dist=prop_dist, n_samples=args.n_stability_samples)
-    exit(0)
+    # analyze_and_save(args=args, epoch=0, model_sample=model_ema, nodes_dist=nodes_dist,
+    #                  dataset_info=dataset_info, device=device,
+    #                  prop_dist=prop_dist, n_samples=args.n_stability_samples)
+    # exit(0)
     for epoch in range(args.start_epoch, args.n_epochs):
         start_epoch = time.time()
         train_HyperbolicDiffusion_epoch(args=args, loader=dataloaders['train'], epoch=epoch, model=model, model_dp=model_dp,
                     model_ema=model_ema, ema=ema, device=device, dtype=dtype, property_norms=property_norms,
                     nodes_dist=nodes_dist, dataset_info=dataset_info,
                     gradnorm_queue=gradnorm_queue, optim=optim, prop_dist=prop_dist)
-        utils.save_model(optim, 'outputs/%s/optim_%d.npy' % (args.exp_name, epoch))
-        utils.save_model(model, 'outputs/%s/generative_model_%d.npy' % (args.exp_name, epoch))
+        # utils.save_model(optim, 'outputs/%s/optim_%d.npy' % (args.exp_name, epoch))
+        # utils.save_model(model, 'outputs/%s/generative_model_%d.npy' % (args.exp_name, epoch))
         print(f"Epoch took {time.time() - start_epoch:.1f} seconds.")
         if epoch+1 % args.visualize_epoch == 0: #and epoch != 0
             analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,

@@ -67,7 +67,7 @@ def initialize_datasets(args, datadir, dataset, subset=None, splits=None,
                 val) for key, val in f.items()}
 
     if dataset != 'qm9':
-        np.random.seed(42)
+        # np.random.seed(42)
         fixed_perm = np.random.permutation(len(datasets['train']['num_atoms']))
         if dataset == 'qm9_second_half':
             sliced_perm = fixed_perm[len(datasets['train']['num_atoms'])//2:]

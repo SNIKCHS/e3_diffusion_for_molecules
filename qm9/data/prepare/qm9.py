@@ -111,7 +111,7 @@ def gen_splits_gdb9(gdb9dir, cleanup=True):
     Nvalid = Nmols - (Ntrain + Ntest)
 
     # Generate random permutation
-    np.random.seed(0)
+    # np.random.seed(0)
     data_perm = np.random.permutation(Nmols)
 
     # Now use the permutations to generate the indices of the dataset splits.

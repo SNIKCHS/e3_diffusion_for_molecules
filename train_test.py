@@ -61,7 +61,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
             grad_norm = 0.
 
         optim.step()
-        model.show_curvatures()
+        # model.show_curvatures()
         if args.lr_scheduler:
             lr_scheduler.step(loss)
 

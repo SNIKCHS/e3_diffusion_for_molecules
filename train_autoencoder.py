@@ -1,5 +1,7 @@
 # Rdkit import should be first, do not move it
 import copy
+import random
+
 import utils.utils as utils
 import argparse
 import wandb
@@ -20,10 +22,10 @@ import numpy as np
 
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='AE_HGCN_geoopt_lowedgeloss')
-
+parser.add_argument('--exp_name', type=str, default='AE_HGCN_geoopt')
+parser.add_argument('--seed', type=int, default=1)
 parser.add_argument('--n_epochs', type=int, default=200)
-parser.add_argument('--batch_size', type=int, default=32)
+parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--dropout', type=float, default=0)
 parser.add_argument('--dim', type=int, default=20)
@@ -93,7 +95,14 @@ parser.add_argument('--remove_h', action='store_true')
 parser.add_argument('--include_charges', type=eval, default=True,
                     help='include atom charge or not')
 args = parser.parse_args()
-
+def setup_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+# 设置随机数种子
+setup_seed(args.seed)
 dataset_info = get_dataset_info(args.dataset, args.remove_h)
 
 atom_encoder = dataset_info['atom_encoder']
@@ -219,6 +228,7 @@ def main():
     best_nll_test = 1e8
     for epoch in range(args.start_epoch, args.n_epochs):
         start_epoch = time.time()
+
         train_AE_epoch(args=args, loader=dataloaders['train'], epoch=epoch, model=model, model_dp=model_dp,
                     model_ema=model_ema, ema=ema, device=device, dtype=dtype, property_norms=property_norms,
                     gradnorm_queue=gradnorm_queue, optim=optim,lr_scheduler=lr_scheduler)

@@ -39,8 +39,8 @@ class Encoder(nn.Module):
         distances, _ = coord2diff(x, edges)  # (b*n_node*n_node,1)
 
         output, distances, edges, node_mask, edge_mask = self.encode(h, distances, edges, node_mask, edge_mask)
-        if torch.any(torch.isnan(output)):
-            print('ENCoutput nan')
+        # if torch.any(torch.isnan(output)):
+        #     print('ENCoutput nan')
         parameters = self.mean_logvar(output)
         posterior = DiagonalGaussianDistribution(parameters,self.manifolds[-1],node_mask)
 

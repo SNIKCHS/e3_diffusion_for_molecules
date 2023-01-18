@@ -20,7 +20,7 @@ class EGNN_dynamics_QM9(nn.Module):
                 n_layers=n_layers, attention=attention, tanh=tanh, norm_constant=norm_constant,
                 inv_sublayers=inv_sublayers, sin_embedding=sin_embedding,
                 normalization_factor=normalization_factor,
-                aggregation_method=aggregation_method,hyp=hyp,c=c)
+                aggregation_method=aggregation_method,hyp=hyp)
             self.in_node_nf = in_node_nf
         elif mode == 'gnn_dynamics':
             self.gnn = GNN(
@@ -147,17 +147,16 @@ class EGNN_Lorentz_dynamics_QM9(nn.Module):
                  n_dims, hidden_nf=64, device='cpu',
                  act_fn=torch.nn.SiLU(), n_layers=4, attention=False,
                  condition_time=True, tanh=False, mode='egnn_dynamics', norm_constant=0,
-                 inv_sublayers=2, sin_embedding=False, normalization_factor=100, aggregation_method='sum',hyp=False,manifold=None):
+                 inv_sublayers=2, sin_embedding=False, normalization_factor=100, aggregation_method='sum',hyp=False):
         super().__init__()
         self.mode = mode
-        self.manifold = manifold
         self.egnn = EGNN(
             in_node_nf=in_node_nf + context_node_nf, in_edge_nf=1,
             hidden_nf=hidden_nf, device=device, act_fn=act_fn,
             n_layers=n_layers, attention=attention, tanh=tanh, norm_constant=norm_constant,
             inv_sublayers=inv_sublayers, sin_embedding=sin_embedding,
             normalization_factor=normalization_factor,
-            aggregation_method=aggregation_method,hyp=hyp,manifold=manifold)
+            aggregation_method=aggregation_method,hyp=hyp)
         self.in_node_nf = in_node_nf
 
 
@@ -191,7 +190,6 @@ class EGNN_Lorentz_dynamics_QM9(nn.Module):
         xh = xh.view(bs*n_nodes, -1).clone() * node_mask  # xh->(b*n_nodes,3+6)
         x = xh[:, 0:self.n_dims].clone()  # x->(b*n_nodes,3)
         h = xh[:, self.n_dims:].clone()
-        h = self.manifold.logmap0(h)  # 在切空间concat t
         if self.condition_time:
             if np.prod(t.size()) == 1:
                 # t is the same for all elements in batch.
@@ -200,7 +198,6 @@ class EGNN_Lorentz_dynamics_QM9(nn.Module):
                 # t is different over the batch dimension.
                 h_time = t.view(bs, 1).repeat(1, n_nodes)
                 h_time = h_time.view(bs * n_nodes, 1)
-
 
             h = torch.cat([h, h_time], dim=1)
 
@@ -213,7 +210,7 @@ class EGNN_Lorentz_dynamics_QM9(nn.Module):
             h = torch.where(torch.isnan(h), torch.full_like(h, 0), h)
         if self.mode == 'egnn_dynamics':
 
-            h_final, x_final = self.egnn(h, x, edges, node_mask=node_mask, edge_mask=edge_mask)
+            h_final, x_final = self.egnn(h, x, edges, node_mask=node_mask, edge_mask=edge_mask,t=h_time)
             vel = (x_final - x) * node_mask  # This masking operation is redundant but just in case
         elif self.mode == 'gnn_dynamics':
             xh = torch.cat([x, h], dim=1)

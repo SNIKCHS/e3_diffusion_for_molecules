@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import torch
 from GraphRicciCurvature.OllivierRicci import OllivierRicci
 from GraphRicciCurvature.FormanRicci import FormanRicci
-import community as community_louvain
 # for ARI computation
 from sklearn import preprocessing, metrics
 import GraphRicciCurvature
@@ -37,6 +36,7 @@ def get_adj_matrix(n_nodes):
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
 parser.add_argument('--batch_size', type=int, default=1)
+parser.add_argument('--shuffle', type=bool, default=True)
 parser.add_argument('--dataset', type=str, default='qm9',
                     help='qm9 | qm9_second_half (train only on the last 50K samples of the training dataset)')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of worker for the dataloader')
@@ -72,7 +72,8 @@ for i in range(len(edge[0])):
         a_type = atom_charge_dict[categories[0,a].item()]+str(a.item())
         b_type = atom_charge_dict[categories[0,b].item()]+str(b.item())
         print(a_type, b_type, dist[i].item())
-        G.add_edge(a_type, b_type, dist=dist[i].item())
+        if dist[i]<5:
+            G.add_edge(a_type, b_type, dist=dist[i].item())
 
 
 # G = nx.Graph()
@@ -85,7 +86,7 @@ for i in range(len(edge[0])):
 #     d.clear()   # remove edge weight
 print(nx.info(G))
 
-orc = OllivierRicci(G, weight='dist', alpha=0.5, verbose="TRACE")
+orc = OllivierRicci(G, weight='dist', alpha=0.9, verbose="TRACE")
 
 orc.compute_ricci_curvature()
 G_orc = orc.G.copy()
@@ -109,8 +110,8 @@ def show_results(G, curvature="ricciCurvature"):
     # Print the first five results
     print("Karate Club Graph, first 5 edges: ")
 
-    for n1, n2 in list(G.edges()):
-        print("Ricci curvature of edge (%s,%s) is %f" % (n1, n2, G[n1][n2][curvature]))
+    # for n1, n2 in list(G.edges()):
+    #     print("Ricci curvature of edge (%s,%s) is %f" % (n1, n2, G[n1][n2][curvature]))
     for n in list(G.nodes()):
         print("Ricci curvature of node (%s) is %f" % (n, G.nodes[n][curvature]))
 

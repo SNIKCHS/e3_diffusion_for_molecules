@@ -85,8 +85,11 @@ class HGCLayer(nn.Module):
             self.ln = nn.LayerNorm(out_features)
         self.reset_parameters()
 
-    def proj_tan0(self,manifold,u):
-        return manifold.proju(manifold.origin((u.size())),u)
+    def proj_tan0(self,u):
+        narrowed = u.narrow(-1, 0, 1)
+        vals = torch.zeros_like(u)
+        vals[:, 0:1] = narrowed
+        return u - vals
     def reset_parameters(self):
         # init.xavier_uniform_(self.linear.weight, gain=0.01)
         init.constant_(self.bias, 0.1)
@@ -112,10 +115,9 @@ class HGCLayer(nn.Module):
     def HypLinear(self, x):
         x = self.manifold_in.logmap0(x)
         x = self.linear(x)
-        x = self.proj_tan0(self.manifold_in,x)
+        x = self.proj_tan0(x)
         x = self.manifold_in.expmap0(x)
-        bias = self.proj_tan0(self.manifold_in,self.bias.view(1, -1))
-        # hyp_bias = self.manifold.expmap0(bias)
+        bias = self.proj_tan0(self.bias.view(1, -1))
         bias = self.manifold_in.transp0(x, bias)
         res = self.manifold_in.expmap(x, bias)
         return res
@@ -127,7 +129,7 @@ class HGCLayer(nn.Module):
         x_tangent_row = x_tangent[row]
         x_tangent_col = x_tangent[col]
 
-        geodesic = self.manifold_in.dist(x[row], x[col],keepdim=True)
+        geodesic = self.manifold_in.dist(x[row], x[col],keepdim=True)  # (b*n_node*n_node,dim)
         edge_attr = torch.cat([edge_attr,geodesic],dim=-1)
         att = self.att(x_tangent_row, x_tangent_col, edge_attr, edge_mask)  # (b*n_node*n_node,dim)
         x_local_tangent = self.manifold_in.logmap(x[row], x[col])  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
@@ -144,7 +146,7 @@ class HGCLayer(nn.Module):
 
     def HypAct(self, x):
         xt = self.act(self.manifold_in.logmap0(x))
-        xt = self.proj_tan0(self.manifold_out,xt)
+        xt = self.proj_tan0(xt)
         out = self.manifold_out.expmap0(xt)
         return out
 
@@ -206,14 +208,17 @@ class HypLinear(nn.Module):
     def reset_parameters(self):
         init.xavier_uniform_(self.linear.weight, gain=0.25)
         init.constant_(self.bias, 0)
-    def proj_tan0(self,manifold,u):
-        return manifold.proju(manifold.origin((u.size())),u)
+
+    def proj_tan0(self, u):
+        u[..., 0] = 0.0
+        return u
     def forward(self, x):
         x = self.manifold.logmap0(x)
         x = self.linear(x)
-        x = self.proj_tan0(self.manifold, x)
+        x = self.proj_tan0(x)
         x = self.manifold.expmap0(x)
-        bias = self.proj_tan0(self.manifold, self.bias.view(1, -1))
+        bias = self.bias.repeat(x.size(0),1)
+        bias = self.proj_tan0(bias)
         bias = self.manifold.transp0(x, bias)
         res = self.manifold.expmap(x, bias)
 
