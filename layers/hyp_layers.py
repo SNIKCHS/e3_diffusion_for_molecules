@@ -1,7 +1,4 @@
 """Hyperbolic layers."""
-import math
-
-import geoopt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,6 +6,7 @@ import torch.nn.init as init
 from torch.nn.modules.module import Module
 
 from layers.att_layers import DenseAtt
+from manifold.Lorentz import Lorentz
 
 
 def get_dim_act_curv(args,num_layers,enc = True):
@@ -31,10 +29,10 @@ def get_dim_act_curv(args,num_layers,enc = True):
 
     if args.c is None:
         # create list of trainable curvature parameters
-        manifolds = [geoopt.Lorentz(learnable=True) for _ in range(num_layers + 1)]
+        manifolds = [Lorentz(learnable=True) for _ in range(num_layers + 1)]
     else:
         # fixed curvature
-        manifolds = [geoopt.Lorentz(args.c,learnable=False) for _ in range(num_layers + 1)]
+        manifolds = [Lorentz(args.c,learnable=False) for _ in range(num_layers + 1)]
 
     return dims, acts, manifolds
 
@@ -92,7 +90,7 @@ class HGCLayer(nn.Module):
         return u - vals
     def reset_parameters(self):
         # init.xavier_uniform_(self.linear.weight, gain=0.01)
-        init.constant_(self.bias, 0.1)
+        init.constant_(self.bias, 0)
 
     def forward(self, input):
         h, edge_attr, edges, node_mask, edge_mask = input

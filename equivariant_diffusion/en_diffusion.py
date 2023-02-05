@@ -937,8 +937,8 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         posterior, distances, edges, _, _ = self.Encoder(x, categories, edges, node_mask, edge_mask)
         h = posterior.mode()
         h = h.view(batch_size, n_nodes, -1)
-
         _, h, _ = self.normalize(None, h, node_mask)
+        # print('h:', torch.max(h.view(-1)), torch.min(h.view(-1)))
         # Reset delta_log_px if not vlb objective.
         if self.training and self.loss_type == 'l2':
             delta_log_px = torch.zeros_like(delta_log_px)
@@ -1019,7 +1019,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         # Sample a timestep t.
         t_int = torch.randint(  # batch_size维度是不同的t
-            lowest_t, self.T + 1, size=(x.size(0), 1), device=x.device).to(torch.float64)
+            lowest_t, self.T + 1, size=(x.size(0), 1), device=x.device)
         s_int = t_int - 1  # t的前一个时间步
         # t_is_zero = (t_int == 0).float()  # Important to compute log p(x | z0).
 
@@ -1218,7 +1218,6 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             t_array = t_array / self.T
             # print('z_beg:', torch.max(z.view(-1)), torch.min(z.view(-1)))
             _, z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context, fix_noise=fix_noise)
-            print('z:', torch.max(z.view(-1)), torch.min(z.view(-1)))
 
         # Finally sample p(x, h | z_0).
         x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context, fix_noise=fix_noise)

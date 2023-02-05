@@ -50,7 +50,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
 
         # transform batch through flow
         rec_loss, KL_loss,edge_loss = model_dp(x, h, node_mask, edge_mask)
-        loss = rec_loss + args.ode_regularization*KL_loss+edge_loss
+        loss = rec_loss + args.ode_regularization*KL_loss+args.ode_regularization*edge_loss
         if torch.isnan(loss):
             raise AssertionError
         loss.backward()
@@ -122,10 +122,17 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
         # transform batch through flow
         nll, reg_term, mean_abs_z = losses.compute_loss_and_nll(args, model_dp, nodes_dist,
                                                                 x, h, node_mask, edge_mask, context)
-
+        with torch.no_grad():
+            t = torch.arange(0,1,0.1).unsqueeze(-1).to(device, dtype)
+            c = model.dynamics.egnn.curvature_net(t)
+            print(c)
         # standard nll from forward KL
         loss = nll + args.ode_regularization * reg_term
         if torch.isnan(loss):
+            with torch.no_grad():
+                t = torch.arange(0, 1, 0.05).unsqueeze(-1).to(device, dtype)
+                c = model.dynamics.egnn.curvature_net(t)
+                print(c)
             raise AssertionError
         loss.backward()
 
@@ -293,7 +300,7 @@ def test_AE(args, loader, epoch, eval_model, device, dtype, property_norms, part
             # transform batch through flow
             rec_loss, KL_loss,edge_loss = eval_model(x, h, node_mask, edge_mask)
             # standard nll from forward KL
-            nll = rec_loss + 1e-6*KL_loss + edge_loss
+            nll = rec_loss + args.ode_regularization*KL_loss +args.ode_regularization*edge_loss
             # standard nll from forward KL
 
             nll_epoch += nll * batch_size
@@ -452,7 +459,7 @@ def analyze_and_save(epoch, model_sample, nodes_dist, args, device, dataset_info
 
     wandb.log(validity_dict)
     if rdkit_tuple is not None:
-        wandb.log({'Validity': rdkit_tuple[0][0], 'Uniqueness': rdkit_tuple[0][1], 'Novelty': rdkit_tuple[0][2]})
+        wandb.log({'epoch':epoch,'Validity': rdkit_tuple[0][0], 'Uniqueness': rdkit_tuple[0][1], 'Novelty': rdkit_tuple[0][2]})
         print('Validity:', rdkit_tuple[0][0], ' Uniqueness:', rdkit_tuple[0][1], ' Novelty:', rdkit_tuple[0][2])
 
     # model_sample.change_device(device_back)

@@ -165,11 +165,14 @@ class HGCN(Encoder):
         #     self.norm = nn.LayerNorm(args.dim)
 
     def encode(self, h, distances, edges, node_mask, edge_mask):
-        h = self.proj_tan0(self.manifolds[0],h)
+        h = self.proj_tan0(h)
         h = self.manifolds[0].expmap0(h)
         output, distances, edges, node_mask, edge_mask = super(HGCN, self).encode(h, distances, edges, node_mask, edge_mask)
 
-        output = self.proj_tan0(self.manifolds[-1],self.manifolds[-1].logmap0(output))
+        output = self.proj_tan0(self.manifolds[-1].logmap0(output))
         return output, distances, edges, node_mask, edge_mask
-    def proj_tan0(self,manifold,u):
-        return manifold.proju(manifold.origin((u.size())),u)
+    def proj_tan0(self,u):
+        narrowed = u.narrow(-1, 0, 1)
+        vals = torch.zeros_like(u)
+        vals[:, 0:1] = narrowed
+        return u - vals

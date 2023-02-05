@@ -27,7 +27,7 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch, test_HyperbolicDiffusion
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_modif')
+parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_cwitht')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
@@ -43,8 +43,8 @@ parser.add_argument('--diffusion_noise_precision', type=float, default=1e-5,
 parser.add_argument('--diffusion_loss_type', type=str, default='l2',
                     help='vlb, exil2')
 parser.add_argument('--seed', type=int, default=1)
-parser.add_argument('--n_epochs', type=int, default=10)
-parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--n_epochs', type=int, default=1000)
+parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--brute_force', type=eval, default=False,
                     help='True | False')
@@ -67,7 +67,7 @@ parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
 parser.add_argument('--inv_sublayers', type=int, default=1,
                     help='number of layers')
-parser.add_argument('--nf', type=int, default=256,
+parser.add_argument('--nf', type=int, default=128,
                     help='dim of EGNN hidden feature')
 parser.add_argument('--dim', type=int, default=20,
                     help='dim of encoder output')
@@ -91,15 +91,15 @@ parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
 parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
+parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
-parser.add_argument('--cuda', type=str, default='cuda:1')
+parser.add_argument('--cuda', type=str, default='cuda')
 parser.add_argument('--save_model', type=eval, default=True,
                     help='save model')
 parser.add_argument('--generate_epochs', type=int, default=1,
                     help='save model')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of worker for the dataloader')
-parser.add_argument('--test_epochs', type=int, default=5)
+parser.add_argument('--test_epochs', type=int, default=2)
 parser.add_argument('--data_augmentation', type=eval, default=True, help='')
 parser.add_argument("--conditioning", nargs='+', default=[],
                     help='arguments : homo | lumo | alpha | gap | mu | Cv' )
@@ -143,8 +143,8 @@ atom_decoder = dataset_info['atom_decoder']
 
 
 device = torch.device(args.cuda)
-dtype = torch.float64
-torch.set_default_tensor_type(torch.DoubleTensor)
+dtype = torch.float32
+# torch.set_default_tensor_type(torch.DoubleTensor)
 if args.resume is not None:
     exp_name = args.exp_name + '_resume'
     start_epoch = args.start_epoch
@@ -212,7 +212,7 @@ else:
 args.context_node_nf = context_node_nf
 
 
-AE_state_dict = torch.load('outputs/AE_HGCN_geoopt/AE_ema.npy')
+AE_state_dict = torch.load('outputs/AE_HGCN_geoopt/AE_ema.npy',map_location=device)
 with open('outputs/AE_HGCN_geoopt/args.pickle', 'rb') as f:
     AE_args = pickle.load(f)
 AE_args.dropout = 0
@@ -253,7 +253,7 @@ def main():
     #     model.load_state_dict(flow_state_dict)
     #     optim.load_state_dict(optim_state_dict)
     # args.start_epoch = 423
-    # flow_state_dict = torch.load('outputs/Diffusion_AE_HGCN_modif/generative_model_0.npy')
+    # flow_state_dict = torch.load('outputs/Diffusion_AE_HGCN_cwitht/generative_model.npy')
     # optim_state_dict = torch.load('outputs/Diffusion_AE_HGCN_modif/optim.npy')
     # model.load_state_dict(flow_state_dict,False)
     # optim.load_state_dict(optim_state_dict)
@@ -306,11 +306,15 @@ def main():
         # utils.save_model(optim, 'outputs/%s/optim_%d.npy' % (args.exp_name, epoch))
         # utils.save_model(model, 'outputs/%s/generative_model_%d.npy' % (args.exp_name, epoch))
         print(f"Epoch took {time.time() - start_epoch:.1f} seconds.")
-        if epoch+1 % args.visualize_epoch == 0: #and epoch != 0
+        with torch.no_grad():
+            t = torch.arange(0,1,0.05).unsqueeze(-1).to(device, dtype)
+            c = model.dynamics.egnn.curvature_net(t)
+            print(c)
+        if (epoch+1) % args.visualize_epoch == 0: #and epoch != 0
             analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,
                              dataset_info=dataset_info, device=device,
                              prop_dist=prop_dist, n_samples=args.n_stability_samples)
-        if epoch+1 % args.test_epochs == 0:
+        if (epoch+1) % args.test_epochs == 0:
             wandb.log(model.log_info(), commit=True)
             nll_val = test_HyperbolicDiffusion(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema_dp,
                            partition='Val', device=device, dtype=dtype, nodes_dist=nodes_dist,
@@ -341,8 +345,8 @@ def main():
                         pickle.dump(args, f)
             print('Val loss: %.4f' % (nll_val))
             print('Best val loss: %.4f \t Best test loss:  %.4f' % (best_nll_val, best_nll_test))
-            wandb.log({"Val loss ": nll_val}, commit=True)
-            wandb.log({"Best val loss ": best_nll_val}, commit=True)
+            wandb.log({"Val loss ": nll_val,'epoch':epoch}, commit=True)
+            wandb.log({"Best val loss ": best_nll_val,'epoch':epoch}, commit=True)
             # wandb.log({"Test loss ": nll_test}, commit=True)
             # wandb.log({"Best cross-validated test loss ": best_nll_test}, commit=True)
 

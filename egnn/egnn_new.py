@@ -29,45 +29,150 @@ class HypLinear(nn.Module):
     def reset_parameters(self):
         init.xavier_uniform_(self.linear.weight, gain=0.1)
         init.constant_(self.bias, 0)
-    def proj_tan0(self,manifold,u):
-        return manifold.proju(manifold.origin((u.size())),u)
+    def proj_tan0(self,u):
+        narrowed = u.narrow(-1, 0, 1)
+        vals = torch.zeros_like(u)
+        vals[:, 0:1] = narrowed
+        return u - vals
     def forward(self, x):
         x = self.manifold.logmap0(x)
         x = self.linear(x)
-        x = self.proj_tan0(self.manifold, x)
+        x = self.proj_tan0(x)
         x = self.manifold.expmap0(x)
         bias = self.bias.repeat(x.size(0),1)
-        bias = self.proj_tan0(self.manifold, bias)
+        bias = self.proj_tan0(bias)
         bias = self.manifold.transp0(x, bias)
         res = self.manifold.expmap(x, bias)
 
         return res
-class HGCL(HGCLayer):
-    def __init__(self,in_features, out_features, manifold_in, manifold_out, dropout, act,edge_dim=2):
-        super(HGCL, self).__init__(in_features, out_features, manifold_in, manifold_out, dropout, act,edge_dim)
+# class HGCL(HGCLayer):
+#     def __init__(self,in_features, out_features, manifold_in, manifold_out, dropout, act,edge_dim=2):
+#         super(HGCL, self).__init__(in_features, out_features, manifold_in, manifold_out, dropout, act,edge_dim)
+#
+#     def HypAgg(self, x, edge_attr, edges, node_mask, edge_mask):
+#
+#         x_tangent = self.manifold_in.logmap0(x)  # (b*n_node,dim)
+#
+#         row, col = edges  # 0,0,0...0,1 0,1,2..,0
+#         x_tangent_row = x_tangent[row]
+#         x_tangent_col = x_tangent[col]
+#
+#         geodesic = self.manifold_in.dist(x[row], x[col],keepdim=True,expand_k=True)  # (b*n_node*n_node,dim)
+#         edge_attr = torch.cat([edge_attr,geodesic],dim=-1)
+#         att = self.att(x_tangent_row, x_tangent_col, edge_attr, edge_mask)  # (b*n_node*n_node,dim)
+#         x_local_tangent = self.manifold_in.logmap(x[row], x[col],expand_k=True)  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
+#         agg = x_local_tangent * att
+#         out = unsorted_segment_sum(agg, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
+#                                    normalization_factor=self.normalization_factor,
+#                                    aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,dim)->(b*n_nodes,dim)
+#
+#         # out = self.node_mlp(out)
+#         support_t = self.manifold_in.proju(x, out)
+#         output = self.manifold_in.expmap(x, support_t)
+#
+#         return output
+class HGCL(nn.Module):
+    def __init__(self, input_nf, output_nf, hidden_nf,manifold_in, manifold_out, normalization_factor, aggregation_method,
+                 edges_in_d=0, nodes_att_dim=0, act_fn=nn.SiLU(), attention=False):
+        super(HGCL, self).__init__()
+        input_edge = input_nf * 2
+        self.manifold_in = manifold_in
+        self.manifold_out = manifold_out
+        self.normalization_factor = normalization_factor
+        self.aggregation_method = aggregation_method
+        self.attention = attention
+        self.ln = nn.LayerNorm(input_nf - 1)
 
-    def HypAgg(self, x, edge_attr, edges, node_mask, edge_mask):
+        self.edge_mlp = nn.Sequential(
+            nn.Linear(input_edge + edges_in_d+1, hidden_nf),
+            act_fn,
+            nn.Linear(hidden_nf, hidden_nf),
+            )  # tanh
 
-        x_tangent = self.manifold_in.logmap0(x)  # (b*n_node,dim)
+        self.node_mlp = nn.Sequential(
+            # nn.Linear(hidden_nf + input_nf + nodes_att_dim, hidden_nf),
+            nn.Linear(hidden_nf, hidden_nf),
+            act_fn,
+            nn.Linear(hidden_nf, output_nf),
+        )
 
-        row, col = edges  # 0,0,0...0,1 0,1,2..,0
-        x_tangent_row = x_tangent[row]
-        x_tangent_col = x_tangent[col]
 
-        geodesic = self.manifold_in.dist(x[row], x[col],keepdim=True,expand_k=True)  # (b*n_node*n_node,dim)
-        edge_attr = torch.cat([edge_attr,geodesic],dim=-1)
-        att = self.att(x_tangent_row, x_tangent_col, edge_attr, edge_mask)  # (b*n_node*n_node,dim)
-        x_local_tangent = self.manifold_in.logmap(x[row], x[col],expand_k=True)  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
-        agg = x_local_tangent * att
-        out = unsorted_segment_sum(agg, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
+        if self.attention:
+            self.att_mlp = nn.Sequential(
+                nn.Linear(input_edge + edges_in_d+1, 1),
+                # nn.Sigmoid()
+            )
+        self.ln = nn.LayerNorm(hidden_nf-1)
+        self.apply(weight_init)
+
+    def edge_model(self, source, target, edge_attr, edge_mask,size):
+        b,n_nodes = size
+        c = self.manifold_in.k.float()
+        c = c.view(b, n_nodes)
+        c = c.repeat(1, n_nodes).view(-1, 1)
+
+        s = self.manifold_in.logmap(source,source,expand_k=True)
+        t = self.manifold_in.logmap(source,target,expand_k=True)
+        out = torch.cat([s, t, edge_attr,c], dim=1)  # (b*n_nodes*n_nodes,2*hidden_nf(default:128)+2)
+
+        mij = self.edge_mlp(out)  # (b*n_nodes*n_nodes,hidden_nf(default:128))
+        mij = self.proj_tan0(mij)
+        # mij = self.manifold_in.proju(source, mij,expand_k=True)
+        if self.attention:
+            source_att = self.manifold_in.logmap0(source,expand_k=True)
+            target_att = self.manifold_in.logmap0(target,expand_k=True)
+            att_val = self.att_mlp(torch.cat([source_att, target_att, edge_attr,c], dim=1)).view(b*n_nodes,n_nodes)  # (b*n_nodes*n_nodes,1)
+            out = mij * torch.softmax(att_val,-1).view(-1,1)  # (b*n_nodes*n_nodes,hidden_nf(default:128))
+        else:
+            out = mij
+        # out = self.manifold_in.proju(source, out)
+        if edge_mask is not None:
+            out = out * edge_mask
+
+        return out, None  # (b*n_nodes*n_nodes,hidden_nf(default:128)) (b*n_nodes*n_nodes,hidden_nf(default:128))
+
+    def node_model(self, x, edge_index, edge_attr, node_attr):
+        row, col = edge_index
+        agg = unsorted_segment_sum(edge_attr, row, num_segments=x.size(0),  # num_segments=b*n_nodes
                                    normalization_factor=self.normalization_factor,
-                                   aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,dim)->(b*n_nodes,dim)
+                                   aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,hidden_nf)->(b*n_nodes,hidden_nf)
 
-        # out = self.node_mlp(out)
-        support_t = self.manifold_in.proju(x, out)
-        output = self.manifold_in.expmap(x, support_t)
+        # agg = self.manifold_in.proju(x, agg)
+        # print('agg:', torch.max(agg.view(-1)), torch.min(agg.view(-1)))
+        # x_tangent = self.manifold_in.logmap(x, x)
+        # out = self.manifold_in.expmap0(agg)  # 相当于x+agg
+        # print('out:', torch.max(out.view(-1)), torch.min(out.view(-1)))
+        x_tangent = self.manifold_in.logmap0(x)
+        # out_tangent = self.manifold_in.logmap0(out)
+        # if node_attr is not None:  # None
+        #     agg = torch.cat([x_tangent, agg, node_attr], dim=1)
+        # else:
+        #     agg = torch.cat([x_tangent, agg], dim=1)  # (b*n_nodes,2*hidden_nf)
+        out = x_tangent+self.node_mlp(agg)  # residual connect
+        out = self.proj_tan0(out)
+        # if self.manifold_in.name == 'Lorentz':
+        #     out[..., 1:] = self.ln(out[..., 1:].clone())
+        out = self.manifold_out.expmap0(out)
+        # print('out1:', torch.max(out.view(-1)), torch.min(out.view(-1)))
+        return out, agg
 
-        return output
+    def forward(self, h, edge_index, edge_attr=None, node_attr=None, node_mask=None, edge_mask=None):
+        row, col = edge_index
+        b_node,b_node_2 = h.size(0),row.size(0)
+        n_nodes = b_node_2 // b_node
+        size = (b_node//n_nodes,n_nodes)
+
+        edge_feat, mij = self.edge_model(h[row], h[col], edge_attr, edge_mask,size)  # pairwise的信息 (b*n_nodes*n_nodes,hidden_nf(default:128)) shape都一样，mij不使用
+        h, agg = self.node_model(h, edge_index, edge_feat, node_attr)  # h.shape=(b*n_nodes,hidden_nf)
+        if node_mask is not None:
+            h = h * node_mask
+        return h, mij
+
+    def proj_tan0(self,u):
+        narrowed = u.narrow(-1, 0, 1)
+        vals = torch.zeros_like(u)
+        vals[:, 0:1] = narrowed
+        return u - vals
 
 class GCL(nn.Module):
     def __init__(self, input_nf, output_nf, hidden_nf, normalization_factor, aggregation_method,
@@ -203,14 +308,16 @@ class EquivariantBlock(nn.Module):
 
         if hyp:
             self.manifold = manifold_out
-            acts = [act_fn] * n_layers  # len=args.num_layers
             dims = [self.hidden_nf] * (n_layers + 1)  # len=args.num_layers+1
 
             for i in range(0, n_layers):
                 self.add_module("gcl_%d" % i,
                                 HGCL(
-                                    dims[i], dims[i+1], manifold_in, manifold_out, 0, acts[i],3
-                                ))
+                                    dims[i], dims[i+1],dims[i+1], manifold_in, manifold_out,
+                                    normalization_factor=self.normalization_factor,
+                                    aggregation_method=self.aggregation_method,
+                                    edges_in_d=edge_feat_nf,act_fn=act_fn, attention=attention)
+                                )
 
         else:
             for i in range(0, n_layers):
@@ -237,9 +344,10 @@ class EquivariantBlock(nn.Module):
 
         edge_attr = torch.cat([distances, edge_attr], dim=1)  # (b*n_nodes*n_nodes,2) edge_attr是最初的distance
         for i in range(0, self.n_layers):
-            input = h, edge_attr, edge_index, node_mask, edge_mask
-            h, _, _, _, _ = self._modules["gcl_%d" % i](input)
-        h_hyp = self.manifold.logmap0(h)
+            # input = h, edge_attr, edge_index, node_mask, edge_mask
+            # h, _, _, _, _ = self._modules["gcl_%d" % i](input)
+            h, _ = self._modules["gcl_%d" % i](h, edge_index, edge_attr=edge_attr, node_mask=node_mask, edge_mask=edge_mask)
+        # h_t = self.manifold.logmap0(h)
         x = self._modules["gcl_equiv"](h, x, edge_index, coord_diff, edge_attr, node_mask, edge_mask)
         return h, x
 
@@ -280,7 +388,8 @@ class EGNN(nn.Module):
             self.curvature_net = nn.Sequential(
                 nn.Linear(1,64),
                 nn.SiLU(),
-                nn.Dropout(0.1),
+                nn.Linear(64, 64),
+                nn.SiLU(),
                 nn.Linear(64, n_layers+1), # [b,20][20,n_layers+1]
                 nn.Softplus()
             )
@@ -315,11 +424,11 @@ class EGNN(nn.Module):
         # print(t.shape) (b,1)
         # print(h.shape) (b*n_nodes,dim+1)
         if self.hyp:
-            k = self.curvature_net(t)
+            k = self.curvature_net(t)+1
             for i in range(self.n_layers+1):
-                self.manifolds[i].k = k[:,i].unsqueeze(1)
-            print('t:%.3f ' % t[0])
-            print('k:',k[0])
+                self.manifolds[i].set_k(k[:,i].unsqueeze(1))
+            # print('t:%.3f' % (t[0]))
+            # print(k[0])
         # Edit Emiel: Remove velocity as input
         distances, _ = coord2diff(x, edge_index)  # (b*n_node*n_node,1)
         if self.sin_embedding is not None:

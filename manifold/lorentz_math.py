@@ -414,7 +414,7 @@ def _logmap(x, y, k, dim: int = -1,expand_k:bool=False):
     return dist_ * nomin / denom
 
 
-def logmap0(y, *, k, dim=-1):
+def logmap0(y, *, k, dim=-1,expand_k=False):
     r"""
     Compute logarithmic map for :math:`y` from :math:`0` on the manifold.
 
@@ -432,11 +432,17 @@ def logmap0(y, *, k, dim=-1):
     tensor
         tangent vector that transports :math:`0` to :math:`y`
     """
-    return _logmap0(y, k=k, dim=dim)
+    return _logmap0(y, k=k, dim=dim,expand_k=expand_k)
 
 
 @torch.jit.script
-def _logmap0(y, k, dim: int = -1):
+def _logmap0(y, k, dim: int = -1,expand_k:bool=False):
+    if expand_k:
+        b_n_nodes = k.size(0)
+        n_nodes = y.size(0)//b_n_nodes
+        b = b_n_nodes//n_nodes
+        k = k.view(b,n_nodes)
+        k = k.repeat(1,n_nodes).view(-1,1)
     dist_ = _dist0(y, k=k, dim=dim, keepdim=True)
     nomin_ = 1.0 / k * _inner0(y, k=k, keepdim=True) * torch.sqrt(k)
     dn = y.size(dim) - 1

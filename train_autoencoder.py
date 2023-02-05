@@ -25,7 +25,7 @@ parser = argparse.ArgumentParser(description='AE')
 parser.add_argument('--exp_name', type=str, default='AE_HGCN_geoopt')
 parser.add_argument('--seed', type=int, default=1)
 parser.add_argument('--n_epochs', type=int, default=200)
-parser.add_argument('--batch_size', type=int, default=256)
+parser.add_argument('--batch_size', type=int, default=100)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--dropout', type=float, default=0)
 parser.add_argument('--dim', type=int, default=20)
@@ -119,8 +119,6 @@ if args.resume is not None:
     start_epoch = args.start_epoch
     resume = args.resume
     wandb_usr = args.wandb_usr
-    normalization_factor = args.normalization_factor
-    aggregation_method = args.aggregation_method
     # exp_name = args.exp_name + '_resume'
     with open('outputs/'+args.exp_name+'/args.pickle', 'rb') as f:  # outputs/%s/args_%d.pickle
         args = pickle.load(f)
@@ -130,12 +128,6 @@ if args.resume is not None:
     # args.exp_name = exp_name
     args.start_epoch = start_epoch
     args.wandb_usr = wandb_usr
-
-    # Careful with this -->
-    if not hasattr(args, 'normalization_factor'):
-        args.normalization_factor = normalization_factor
-    if not hasattr(args, 'aggregation_method'):
-        args.aggregation_method = aggregation_method
 
     print(args)
 

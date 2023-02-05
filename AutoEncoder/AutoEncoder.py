@@ -6,7 +6,7 @@ from torch import nn
 
 def weight_init(m):
     if isinstance(m, nn.Linear):
-        nn.init.xavier_uniform_(m.weight,gain=0.1)
+        nn.init.xavier_uniform_(m.weight,gain=0.5)
         if m.bias is not None:
             nn.init.constant_(m.bias, 0)
 class HyperbolicAE(nn.Module):
