@@ -4,8 +4,11 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn import init
 from torch.nn.modules.module import Module
 from torch.nn.parameter import Parameter
+
+from layers.att_layers import DenseAtt
 
 
 def get_dim_act(args,num_layers,enc = True):
@@ -100,7 +103,65 @@ class GraphConvolution(Module):
         return 'input_dim={}, output_dim={}'.format(
                 self.in_features, self.out_features
         )
+class GCLayer(nn.Module):
+    def __init__(self, in_features, out_features, manifold_in, manifold_out, dropout, act,edge_dim=2):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.linear = nn.Linear(in_features, out_features)
+        self.normalization_factor = 100
+        self.aggregation_method = 'sum'
+        self.att = DenseAtt(out_features,dropout=dropout, edge_dim=edge_dim)
+        # self.node_mlp = nn.Sequential(
+        #     nn.Linear(out_features, out_features),
+        #     nn.LayerNorm(out_features),
+        #     nn.SiLU(),
+        #     nn.Linear(out_features, out_features))
+        self.act = act
 
+        self.ln = nn.LayerNorm(out_features)
+        # self.reset_parameters()
+
+    def proj_tan0(self,u):
+        if self.manifold_in.name == 'Lorentz':
+            narrowed = u.narrow(-1, 0, 1)
+            vals = torch.zeros_like(u)
+            vals[:, 0:1] = narrowed
+            return u - vals
+        else:
+            return u
+    def reset_parameters(self):
+        # init.xavier_uniform_(self.linear.weight, gain=0.01)
+        init.constant_(self.bias, 0)
+
+    def forward(self, input):
+        h, edge_attr, edges, node_mask, edge_mask = input
+
+        h = self.linear(h)
+        # if torch.any(torch.isnan(h)):
+        #     print('HypLinear nan')
+        h = self.Agg(h, edge_attr, edges, node_mask, edge_mask)
+        # if torch.any(torch.isnan(h)):
+        #     print('HypAgg nan')
+        h = self.ln(h)
+        h = self.act(h)
+        output = (h, edge_attr, edges, node_mask, edge_mask)
+        return output
+
+
+    def Agg(self, x, edge_attr, edges, node_mask, edge_mask):
+
+        row, col = edges  # 0,0,0...0,1 0,1,2..,0
+
+        att = self.att(x[row], x[col], edge_attr, edge_mask)  # (b*n_node*n_node,dim)
+        agg = x[col] * att
+        out = unsorted_segment_sum(agg, row, num_segments=x.size(0),  # num_segments=b*n_nodes
+                                   normalization_factor=self.normalization_factor,
+                                   aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,dim)->(b*n_nodes,dim)
+
+        # out = self.node_mlp(out)
+
+        return out
 
 class Linear(Module):
     """

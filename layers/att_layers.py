@@ -6,15 +6,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def calc_gaussian(x,h):
-    molecule = x*x
-    demominator = 2*h*h
-    left = 1/(math.sqrt(2*math.pi)*h)
-    return left * torch.exp(-molecule/demominator )
+# def calc_gaussian(x,h):
+#     molecule = x*x
+#     demominator = 2*h*h
+#     left = 1/(math.sqrt(2*math.pi)*h)
+#     return left * torch.exp(-molecule/demominator)
 class DenseAtt(nn.Module):
     def __init__(self, in_features, dropout,edge_dim=1):
         super(DenseAtt, self).__init__()
-        self.dropout = dropout
         # self.att_mlp = nn.Sequential(
         #     nn.Linear(2 * in_features + edge_dim, 2 * in_features, bias=True),
         #     nn.SiLU(),
@@ -29,6 +28,7 @@ class DenseAtt(nn.Module):
         self.att_mlp = nn.Sequential(
             nn.Linear(2 * in_features + edge_dim, in_features, bias=True),
             nn.SiLU(),
+            nn.Dropout(dropout),
             nn.Linear(in_features, 1),
             nn.Sigmoid()
         )

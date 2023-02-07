@@ -23,10 +23,10 @@ class HyperbolicAE(nn.Module):
         self.apply(weight_init)
         self.edge_mlp = nn.Sequential(
             nn.Linear(2*args.dim,args.dim),
-            nn.Dropout(0.1),
+            nn.Dropout(args.dropout),
             nn.SiLU(),
             nn.Linear(args.dim, args.dim),
-            nn.Dropout(0.1),
+            nn.Dropout(args.dropout),
             nn.SiLU(),
             nn.Linear(args.dim, 1),
             nn.Softplus()
@@ -101,7 +101,8 @@ class HyperbolicAE(nn.Module):
         loss1 = torch.sqrt_(edge_loss_f(pred_edge,target_edge))
         return loss1
     def show_curvatures(self):
-        c = [m.k for m in self.encoder.manifolds]
-        c.append([m.k for m in self.decoder.manifolds])
-        print(c)
+        if self.args.manifold is not 'Euclidean':
+            c = [m.k for m in self.encoder.manifolds]
+            c.append([m.k for m in self.decoder.manifolds])
+            print(c)
 

@@ -22,23 +22,23 @@ import numpy as np
 
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='3_3_6_hgcn')
+parser.add_argument('--exp_name', type=str, default='3_3_6_hgcn_dropout0.1')
 parser.add_argument('--seed', type=int, default=1)
 parser.add_argument('--n_epochs', type=int, default=200)
-parser.add_argument('--batch_size', type=int, default=32)
+parser.add_argument('--batch_size', type=int, default=16)
 parser.add_argument('--lr', type=float, default=1e-4)
-parser.add_argument('--dropout', type=float, default=0)
+parser.add_argument('--dropout', type=float, default=0.0)
 parser.add_argument('--dim', type=int, default=6)
 parser.add_argument('--enc_layers', type=int, default=3)
 parser.add_argument('--dec_layers', type=int, default=3)
 parser.add_argument('--ode_regularization', type=float, default=1e-4)
 parser.add_argument('--bias', type=int, default=1)
 parser.add_argument('--max_z', type=int, default=6)  # pad+5 types
-parser.add_argument('--device', type=str, default='cuda:1')
+parser.add_argument('--device', type=str, default='cuda')
 parser.add_argument('--model', type=str, default='HGCN',
                     help='MLP,HNN,GCN,HGCN')
-parser.add_argument('--manifold', type=str, default='Hyperboloid',
-                    help='Euclidean, Hyperboloid, PoincareBall')
+parser.add_argument('--manifold', type=str, default='Lorentz',
+                    help='Euclidean, Lorentz, PoincareBall')
 parser.add_argument('--c', type=float, default=None)
 parser.add_argument('--act', type=str, default='silu',
                     help='relu,silu,leaky_relu')

@@ -8,6 +8,7 @@ from torch.nn.modules.module import Module
 from layers.att_layers import DenseAtt
 from manifold.Lorentz import Lorentz
 # from geoopt import Lorentz
+from geoopt import PoincareBall
 
 def get_dim_act_curv(args,num_layers,enc = True):
     """
@@ -27,12 +28,13 @@ def get_dim_act_curv(args,num_layers,enc = True):
         dims = [args.dim]+[args.hidden_dim] * num_layers   # len=args.num_layers+1
     # dims = [args.dim] + [args.hidden_dim] * (args.num_layers)  # len=args.num_layers+1
 
+    manifold_class = {'PoincareBall':PoincareBall,'Lorentz':Lorentz}
     if args.c is None:
         # create list of trainable curvature parameters
-        manifolds = [Lorentz(k=1,learnable=True) for _ in range(num_layers + 1)]
+        manifolds = [manifold_class[args.manifold](1,learnable=True) for _ in range(num_layers + 1)]
     else:
         # fixed curvature
-        manifolds = [Lorentz(args.c,learnable=False) for _ in range(num_layers + 1)]
+        manifolds = [manifold_class[args.manifold](args.c,learnable=False) for _ in range(num_layers + 1)]
 
     return dims, acts, manifolds
 
@@ -66,7 +68,7 @@ class HGCLayer(nn.Module):
         self.manifold_out = manifold_out
         self.bias = nn.Parameter(torch.Tensor(1, out_features))
         self.linear = nn.Linear(in_features, out_features, bias=False)
-
+        self.dropout = nn.Dropout(dropout)
         self.normalization_factor = 100
         self.aggregation_method = 'sum'
         self.att = DenseAtt(out_features,dropout=dropout, edge_dim=edge_dim)
@@ -84,10 +86,13 @@ class HGCLayer(nn.Module):
         self.reset_parameters()
 
     def proj_tan0(self,u):
-        narrowed = u.narrow(-1, 0, 1)
-        vals = torch.zeros_like(u)
-        vals[:, 0:1] = narrowed
-        return u - vals
+        if self.manifold_in.name == 'Lorentz':
+            narrowed = u.narrow(-1, 0, 1)
+            vals = torch.zeros_like(u)
+            vals[:, 0:1] = narrowed
+            return u - vals
+        else:
+            return u
     def reset_parameters(self):
         # init.xavier_uniform_(self.linear.weight, gain=0.01)
         init.constant_(self.bias, 0)
@@ -105,6 +110,7 @@ class HGCLayer(nn.Module):
         # if torch.any(torch.isnan(h)):
         #     print('HNorm nan')
         h = self.HypAct(h)
+
         # if torch.any(torch.isnan(h)):
         #     print('HypAct nan')
         output = (h, edge_attr, edges, node_mask, edge_mask)
@@ -113,6 +119,7 @@ class HGCLayer(nn.Module):
     def HypLinear(self, x):
         x = self.manifold_in.logmap0(x)
         x = self.linear(x)
+        x = self.dropout(x)
         x = self.proj_tan0(x)
         x = self.manifold_in.expmap0(x)
         bias = self.proj_tan0(self.bias.view(1, -1))
@@ -144,6 +151,7 @@ class HGCLayer(nn.Module):
 
     def HypAct(self, x):
         xt = self.act(self.manifold_in.logmap0(x))
+
         xt = self.proj_tan0(xt)
         out = self.manifold_out.expmap0(xt)
         return out

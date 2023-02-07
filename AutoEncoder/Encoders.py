@@ -22,7 +22,7 @@ class Encoder(nn.Module):
 
     def __init__(self, args):
         super(Encoder, self).__init__()
-
+        self.args = args
         self.embedding = nn.Embedding(args.max_z, args.hidden_dim, padding_idx=0)  # qm9 max_z=6
         self.mean_logvar = nn.Linear(args.dim,2*args.dim)
 
@@ -166,13 +166,16 @@ class HGCN(Encoder):
         #     self.norm = nn.LayerNorm(args.dim)
 
     def encode(self, h, distances, edges, node_mask, edge_mask):
-        h = self.proj_tan0(h)
+        if self.args.manifold == 'Lorentz':
+            h = self.proj_tan0(h)
         h = self.manifolds[0].expmap0(h)
         output, distances, edges, node_mask, edge_mask = super(HGCN, self).encode(h, distances, edges, node_mask, edge_mask)
-
-        output = self.proj_tan0(self.manifolds[-1].logmap0(output))
+        output = self.manifolds[-1].logmap0(output)
+        if self.args.manifold == 'Lorentz':
+            output = self.proj_tan0(output)
         return output, distances, edges, node_mask, edge_mask
     def proj_tan0(self,u):
+
         narrowed = u.narrow(-1, 0, 1)
         vals = torch.zeros_like(u)
         vals[:, 0:1] = narrowed
