@@ -42,7 +42,7 @@ class Encoder(nn.Module):
         # if torch.any(torch.isnan(output)):
         #     print('ENCoutput nan')
         parameters = self.mean_logvar(output)
-        posterior = DiagonalGaussianDistribution(parameters,self.manifolds[-1],node_mask)
+        posterior = DiagonalGaussianDistribution(parameters,self.manifold,node_mask)
 
         return posterior, distances, edges, node_mask, edge_mask
 
@@ -118,24 +118,24 @@ class Encoder(nn.Module):
 #         return output, distances, edges, node_mask, edge_mask
 #
 #
-# class GCN(Encoder):
-#     """
-#     Graph Convolution Networks.
-#     """
-#
-#     def __init__(self, args):
-#         super(GCN, self).__init__(args)
-#         assert args.num_layers > 0
-#         self.manifold = getattr(manifolds, args.manifold)()
-#         dims, acts = get_dim_act(args)
-#         gc_layers = []
-#         for i in range(args.num_layers):
-#             in_dim, out_dim = dims[i], dims[i + 1]
-#             act = acts[i]
-#             gc_layers.append(GraphConvolution(in_dim, out_dim, args.dropout, act, args.bias))
-#         self.layers = nn.Sequential(*gc_layers)
-#         self.message_passing = True
-#         self.norm = nn.LayerNorm(args.dim)
+class GCN(Encoder):
+    """
+    Graph Convolution Networks.
+    """
+
+    def __init__(self, args):
+        super(GCN, self).__init__(args)
+        self.manifold = None
+        self.manifolds = None
+        dims, acts = get_dim_act(args,args.enc_layers)
+        gc_layers = []
+        for i in range(args.enc_layers):
+            in_dim, out_dim = dims[i], dims[i + 1]
+            act = acts[i]
+            gc_layers.append(GraphConvolution(in_dim, out_dim, args.dropout, act, args.bias))
+        self.layers = nn.Sequential(*gc_layers)
+        self.message_passing = True
+        self.norm = nn.LayerNorm(args.dim)
 
 
 class HGCN(Encoder):
@@ -147,6 +147,7 @@ class HGCN(Encoder):
         super(HGCN, self).__init__(args)
 
         dims, acts, self.manifolds = get_dim_act_curv(args,args.enc_layers)
+        self.manifold = self.manifolds[-1]
         hgc_layers = []
         for i in range(args.enc_layers):
             m_in, m_out = self.manifolds[i], self.manifolds[i + 1]

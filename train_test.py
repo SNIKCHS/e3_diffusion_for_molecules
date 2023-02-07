@@ -53,6 +53,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         loss = rec_loss + args.ode_regularization*KL_loss+args.ode_regularization*edge_loss
         if torch.isnan(loss):
             raise AssertionError
+
         loss.backward()
 
         if args.clip_grad:
@@ -61,7 +62,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
             grad_norm = 0.
 
         optim.step()
-        # model.show_curvatures()
+
         if args.lr_scheduler:
             lr_scheduler.step(loss)
 
@@ -76,8 +77,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         nll_epoch.append(loss.item())
         wandb.log({"Batch NLL": loss.item(), 'rec_loss': rec_loss.item(), 'KL_loss': KL_loss.item(),'edge_loss': edge_loss.item()},
                   commit=True)
-        if args.break_train_epoch:
-            break
+        model.show_curvatures()
     wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
 
 
@@ -122,17 +122,18 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
         # transform batch through flow
         nll, reg_term, mean_abs_z = losses.compute_loss_and_nll(args, model_dp, nodes_dist,
                                                                 x, h, node_mask, edge_mask, context)
-        with torch.no_grad():
-            t = torch.arange(0,1,0.1).unsqueeze(-1).to(device, dtype)
-            c = model.dynamics.egnn.curvature_net(t)
-            print(c)
+        # with torch.no_grad():
+        #     t = torch.arange(0,1,0.1).unsqueeze(-1).to(device, dtype)
+        #     c = model.dynamics.egnn.curvature_net(t)
+        #     print(c)
         # standard nll from forward KL
         loss = nll + args.ode_regularization * reg_term
         if torch.isnan(loss):
             with torch.no_grad():
-                t = torch.arange(0, 1, 0.05).unsqueeze(-1).to(device, dtype)
+                t = torch.arange(0, 1, 0.1).unsqueeze(-1).to(device, dtype)
                 c = model.dynamics.egnn.curvature_net(t)
                 print(c)
+            utils.save_model(model, 'outputs/%s/error_model.npy' % args.exp_name)
             raise AssertionError
         loss.backward()
 
@@ -161,7 +162,7 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
     # sample_different_sizes_and_save(model_dp, nodes_dist, args, device, dataset_info,
     #                                 prop_dist, epoch=epoch)
     # vis.visualize(f"outputs/{args.exp_name}/epoch_{epoch}_", dataset_info=dataset_info, wandb=wandb)
-    if epoch % args.visualize_epoch == 0 and epoch != 0:
+    if epoch % args.visualize_epoch == 0:
         start = time.time()
         if len(args.conditioning) > 0:
             save_and_sample_conditional(args, device, model_ema, prop_dist, dataset_info, epoch=epoch)

@@ -22,7 +22,7 @@ _lorentz_ball_doc = r"""
 """
 
 
-class Lorentz:
+class Lorentz(torch.nn.Module):
     __doc__ = r"""{}
     """.format(
         _lorentz_ball_doc
@@ -39,18 +39,21 @@ class Lorentz:
         self.k_is_vary = k_is_vary
         # if not torch.is_floating_point(k):
         #     k = k.to(torch.get_default_dtype())
-        if k_is_vary:
-            self.k = k.to(torch.float64)
-        else:
-            self.k = torch.nn.Parameter(k.to(torch.float64), requires_grad=learnable)
+        # if k_is_vary:
+        #     self.k = k.to(torch.float64)
+        # else:
+        #     self.k = torch.nn.Parameter(k.to(torch.float64), requires_grad=learnable)
+        self.k = torch.nn.Parameter(k.to(torch.float64), requires_grad=learnable)
+
 
 
 
     def set_k(self,k):
-        if self.k_is_vary:
-            self.k = k.to(torch.float64)
-        else:
-            self.k.data = k.to(torch.float64)
+        # if self.k_is_vary:
+        #     self.k = k.to(torch.float64)
+        # else:
+        #     self.k.data = k.to(torch.float64)
+        self.k.data = k.to(torch.float64)
     def dist(
             self, x: torch.Tensor, y: torch.Tensor, *, keepdim=False, dim=-1,expand_k=False
     ) -> torch.Tensor:
@@ -115,6 +118,7 @@ class Lorentz:
     @__scaling__(ScalingInfo(1))
     def logmap0(self, y: torch.Tensor, *, dim=-1,expand_k=False) -> torch.Tensor:
         y = y.to(torch.float64)
+
         return math.logmap0(y, k=self.k, dim=dim,expand_k=expand_k).to(torch.get_default_dtype())
 
     def logmap0back(self, x: torch.Tensor, *, dim=-1) -> torch.Tensor:

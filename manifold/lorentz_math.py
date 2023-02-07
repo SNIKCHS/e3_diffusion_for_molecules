@@ -432,6 +432,7 @@ def logmap0(y, *, k, dim=-1,expand_k=False):
     tensor
         tangent vector that transports :math:`0` to :math:`y`
     """
+
     return _logmap0(y, k=k, dim=dim,expand_k=expand_k)
 
 

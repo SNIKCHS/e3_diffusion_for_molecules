@@ -7,7 +7,7 @@ from torch.nn.modules.module import Module
 
 from layers.att_layers import DenseAtt
 from manifold.Lorentz import Lorentz
-
+# from geoopt import Lorentz
 
 def get_dim_act_curv(args,num_layers,enc = True):
     """
@@ -29,7 +29,7 @@ def get_dim_act_curv(args,num_layers,enc = True):
 
     if args.c is None:
         # create list of trainable curvature parameters
-        manifolds = [Lorentz(learnable=True) for _ in range(num_layers + 1)]
+        manifolds = [Lorentz(k=1,learnable=True) for _ in range(num_layers + 1)]
     else:
         # fixed curvature
         manifolds = [Lorentz(args.c,learnable=False) for _ in range(num_layers + 1)]
@@ -67,14 +67,14 @@ class HGCLayer(nn.Module):
         self.bias = nn.Parameter(torch.Tensor(1, out_features))
         self.linear = nn.Linear(in_features, out_features, bias=False)
 
-        self.normalization_factor = 1000
+        self.normalization_factor = 100
         self.aggregation_method = 'sum'
         self.att = DenseAtt(out_features,dropout=dropout, edge_dim=edge_dim)
-        self.node_mlp = nn.Sequential(
-            nn.Linear(out_features, out_features),
-            nn.LayerNorm(out_features),
-            nn.SiLU(),
-            nn.Linear(out_features, out_features))
+        # self.node_mlp = nn.Sequential(
+        #     nn.Linear(out_features, out_features),
+        #     nn.LayerNorm(out_features),
+        #     nn.SiLU(),
+        #     nn.Linear(out_features, out_features))
 
         self.act = act
         if self.manifold_in.name == 'Lorentz':

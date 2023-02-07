@@ -962,8 +962,9 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         """Computes error, i.e. the most likely prediction of x."""
         eps_t = net_out
         if self.training and self.loss_type == 'l2':
-            x_norm = self.n_dims * eps_t.shape[1]
-            t_norm = self.in_node_nf * eps_t.shape[1]
+
+            x_norm = self.n_dims * eps_t.shape[1] # 3 * n_nodes
+            t_norm = self.in_node_nf * eps_t.shape[1] # 20 * n_nodes
             error_x = sum_except_batch((eps[..., :3] - eps_t[..., :3]) ** 2) / x_norm
             error_t = sum_except_batch((eps[..., 3:] - eps_t[..., 3:]) ** 2) / t_norm
             error = error_x + error_t

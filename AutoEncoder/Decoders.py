@@ -26,7 +26,8 @@ class Decoder(nn.Module):
             output, distances, edges, node_mask, edge_mask = self.decoder.forward(input)
         else:
             output = self.decoder.forward(h)
-        output = self.manifolds[-1].logmap0(output)
+        if self.manifolds is not None:
+            output = self.manifolds[-1].logmap0(output)
         node_pred = self.out(output)
         return node_pred
 
@@ -36,16 +37,16 @@ class GCNDecoder(Decoder):
     Graph Convolution Decoder.
     """
 
-    def __init__(self, c, args):
-        super(GCNDecoder, self).__init__(c, args)
+    def __init__(self,manifolds,args):
+        super(GCNDecoder, self).__init__(args)
 
-        assert args.num_layers > 0
-        dims, acts = get_dim_act(args)
+        dims, acts = get_dim_act(args,args.dec_layers,enc=False)
+        self.manifolds = None
         # dims = dims[::-1]
         # acts = acts[::-1]
         # acts = acts[::-1][:-1] + [lambda x: x]  # Last layer without act
         gc_layers = []
-        for i in range(args.num_layers):
+        for i in range(args.dec_layers):
             in_dim, out_dim = dims[i], dims[i + 1]
             act = acts[i]
             gc_layers.append(GraphConvolution(in_dim, out_dim, args.dropout, act, args.bias))

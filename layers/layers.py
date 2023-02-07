@@ -8,7 +8,7 @@ from torch.nn.modules.module import Module
 from torch.nn.parameter import Parameter
 
 
-def get_dim_act(args):
+def get_dim_act(args,num_layers,enc = True):
     """
     Helper function to get dimension and activation at every layer.
     :param args:
@@ -18,10 +18,13 @@ def get_dim_act(args):
         act = lambda x: x
     else:
         act = getattr(F, args.act)
-    acts = [act] * (args.num_layers)
+    acts = [act] * num_layers
 
     # dims = [args.dim] * (args.num_layers+1)
-    dims = [args.dim] + [args.hidden_dim] * (args.num_layers-1) + [args.dim] # len=args.num_layers+1
+    if enc:
+        dims = [args.hidden_dim] * num_layers + [args.dim]  # len=args.num_layers+1
+    else:
+        dims = [args.dim] + [args.hidden_dim] * num_layers  # len=args.num_layers+1
     return dims, acts
 
 def calc_gaussian(x,h):
