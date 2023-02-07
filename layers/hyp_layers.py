@@ -31,7 +31,7 @@ def get_dim_act_curv(args,num_layers,enc = True):
     manifold_class = {'PoincareBall':PoincareBall,'Lorentz':Lorentz}
     if args.c is None:
         # create list of trainable curvature parameters
-        manifolds = [manifold_class[args.manifold](1,learnable=True) for _ in range(num_layers + 1)]
+        manifolds = [manifold_class[args.manifold](1,learnable=False) for _ in range(num_layers + 1)]
     else:
         # fixed curvature
         manifolds = [manifold_class[args.manifold](args.c,learnable=False) for _ in range(num_layers + 1)]
@@ -110,7 +110,6 @@ class HGCLayer(nn.Module):
         # if torch.any(torch.isnan(h)):
         #     print('HNorm nan')
         h = self.HypAct(h)
-
         # if torch.any(torch.isnan(h)):
         #     print('HypAct nan')
         output = (h, edge_attr, edges, node_mask, edge_mask)
@@ -119,9 +118,9 @@ class HGCLayer(nn.Module):
     def HypLinear(self, x):
         x = self.manifold_in.logmap0(x)
         x = self.linear(x)
-        x = self.dropout(x)
         x = self.proj_tan0(x)
         x = self.manifold_in.expmap0(x)
+
         bias = self.proj_tan0(self.bias.view(1, -1))
         bias = self.manifold_in.transp0(x, bias)
         res = self.manifold_in.expmap(x, bias)
@@ -151,7 +150,6 @@ class HGCLayer(nn.Module):
 
     def HypAct(self, x):
         xt = self.act(self.manifold_in.logmap0(x))
-
         xt = self.proj_tan0(xt)
         out = self.manifold_out.expmap0(xt)
         return out

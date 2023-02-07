@@ -22,10 +22,10 @@ import numpy as np
 
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='3_3_6_hgcn_dropout0.1')
+parser.add_argument('--exp_name', type=str, default='3_3_6_hgcn_wrap_b128_computeC')
 parser.add_argument('--seed', type=int, default=1)
 parser.add_argument('--n_epochs', type=int, default=200)
-parser.add_argument('--batch_size', type=int, default=16)
+parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--dropout', type=float, default=0.0)
 parser.add_argument('--dim', type=int, default=6)
@@ -42,7 +42,6 @@ parser.add_argument('--manifold', type=str, default='Lorentz',
 parser.add_argument('--c', type=float, default=None)
 parser.add_argument('--act', type=str, default='silu',
                     help='relu,silu,leaky_relu')
-parser.add_argument('--local_agg', type=int, default=1)
 parser.add_argument('--lr_scheduler', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--pred_edge', type=eval, default=False,

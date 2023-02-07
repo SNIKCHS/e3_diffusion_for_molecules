@@ -12,15 +12,25 @@ class DiagonalGaussianDistribution(object):
         self.manifold = manifold
 
     def proj_tan0(self, u):
-        u[..., 0] = 0.0
-        return u
+        if self.manifold.name == 'Lorentz':
+            narrowed = u.narrow(-1, 0, 1)
+            vals = torch.zeros_like(u)
+            vals[:, 0:1] = narrowed
+            return u - vals
+        else:
+            return u
+
     def sample(self):
-
-        x = self.mean + self.std * torch.randn(self.mean.shape).to(device=self.parameters.device)
-
-        x = self.proj_tan0(x)
-
-        x = x * self.node_mask
+        if self.manifold is None:
+            x = self.mean + self.std * torch.randn(self.mean.shape).to(device=self.parameters.device)
+            x = x * self.node_mask
+            x = self.proj_tan0(x)
+        else:
+            mean = self.manifold.expmap0(self.proj_tan0(self.mean))
+            std = self.std * torch.randn(mean.shape).to(device=self.parameters.device)
+            std_t = self.manifold.transp0(mean,self.proj_tan0(std))
+            x = self.manifold.expmap(mean,std_t)
+            x = self.manifold.logmap0(x)
         return x
 
     def kl(self):

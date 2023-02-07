@@ -40,6 +40,7 @@ class HyperbolicAE(nn.Module):
         edges = self.get_adj_matrix(n_nodes,batch_size)  # [rows, cols] rows=cols=(batch_size*n_nodes*n_nodes) value in [0,batch_size*n_nodes)
         posterior, distances, edges, node_mask, edge_mask = self.encoder(x, categories, edges, node_mask, edge_mask)
         h = posterior.sample()
+        # h = posterior
         edge_loss = self.edge_pred(edges,edge_mask,h,distances)
         # if torch.any(torch.isnan(h)):
         #     print('posterior nan')
@@ -48,6 +49,7 @@ class HyperbolicAE(nn.Module):
         #     print('output nan')
         rec_loss = self.compute_loss(categories, output,node_mask)
         kl_loss = posterior.kl().mean()
+        # kl_loss = torch.tensor(0.0)
         return rec_loss, kl_loss,edge_loss
 
     def compute_loss(self, x, x_hat,node_mask):
@@ -101,7 +103,7 @@ class HyperbolicAE(nn.Module):
         loss1 = torch.sqrt_(edge_loss_f(pred_edge,target_edge))
         return loss1
     def show_curvatures(self):
-        if self.args.manifold is not 'Euclidean':
+        if self.args.manifold != 'Euclidean':
             c = [m.k for m in self.encoder.manifolds]
             c.append([m.k for m in self.decoder.manifolds])
             print(c)

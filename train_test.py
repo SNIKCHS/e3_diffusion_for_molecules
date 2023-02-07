@@ -77,7 +77,7 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         nll_epoch.append(loss.item())
         wandb.log({"Batch NLL": loss.item(), 'rec_loss': rec_loss.item(), 'KL_loss': KL_loss.item(),'edge_loss': edge_loss.item()},
                   commit=True)
-        model.show_curvatures()
+        # model.show_curvatures()
     wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
 
 
