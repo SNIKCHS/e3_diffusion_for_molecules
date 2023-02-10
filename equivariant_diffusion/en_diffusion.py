@@ -4,7 +4,6 @@ from equivariant_diffusion import utils
 import numpy as np
 import math
 import torch
-from egnn import models
 from torch.nn import functional as F
 from equivariant_diffusion import utils as diffusion_utils
 
@@ -456,6 +455,8 @@ class EnVariationalDiffusion(torch.nn.Module):
     def compute_error(self, net_out, gamma_t, eps):
         """Computes error, i.e. the most likely prediction of x."""
         eps_t = net_out
+        print('eps:', eps[0, :1])
+        print('eps_t:', eps_t[0, :1])
         if self.training and self.loss_type == 'l2':
             denom = (self.n_dims + self.in_node_nf) * eps_t.shape[1]
             error = sum_except_batch((eps - eps_t) ** 2) / denom
@@ -961,6 +962,8 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
     def compute_error(self, net_out, gamma_t, eps):
         """Computes error, i.e. the most likely prediction of x."""
         eps_t = net_out
+        print('eps:',eps[0,:1])
+        print('eps_t:',eps_t[0,:1])
         if self.training and self.loss_type == 'l2':
 
             x_norm = self.n_dims * eps_t.shape[1] # 3 * n_nodes
@@ -1234,7 +1237,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
     def decode(self, x, h, node_mask, edge_mask):
         batch_size, n_nodes, dim = h.size()
         edges = self.get_adj_matrix(n_nodes, batch_size)
-        distances, _ = coord2diff(x.view(batch_size * n_nodes, -1), edges)
+        distances = coord2diff(x.view(batch_size * n_nodes, -1), edges)
 
         h_pred = self.Decoder.decode(h.view(-1, dim), distances, edges, node_mask,
                                      edge_mask)  # (b,n_nodes,max_z)  # max_z = 1 padding+5 types
@@ -1323,6 +1326,4 @@ def coord2diff(x, edge_index, norm_constant=1):
     row, col = edge_index
     coord_diff = x[row] - x[col]
     radial = torch.sum((coord_diff) ** 2, 1).unsqueeze(1)
-    norm = torch.sqrt(radial + 1e-8)
-    coord_diff = coord_diff / (norm + norm_constant)
-    return radial, coord_diff
+    return torch.sqrt(radial + 1e-8)

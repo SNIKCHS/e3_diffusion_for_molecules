@@ -22,7 +22,7 @@ import numpy as np
 
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='3_3_6_hgcn_wrap_b128_computeC')
+parser.add_argument('--exp_name', type=str, default='3_3_6_hgcn_wrap_b128_newdist')
 parser.add_argument('--seed', type=int, default=1)
 parser.add_argument('--n_epochs', type=int, default=200)
 parser.add_argument('--batch_size', type=int, default=128)

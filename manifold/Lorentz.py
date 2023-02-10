@@ -1,10 +1,8 @@
 import torch
 import torch.nn
-from typing import Tuple, Optional
 from . import lorentz_math as math
 import geoopt
 from geoopt.manifolds.base import Manifold, ScalingInfo
-from geoopt.utils import size2shape
 
 __all__ = ["Lorentz"]
 
@@ -22,7 +20,7 @@ _lorentz_ball_doc = r"""
 """
 
 
-class Lorentz(torch.nn.Module):
+class Lorentz:
     __doc__ = r"""{}
     """.format(
         _lorentz_ball_doc
@@ -43,7 +41,8 @@ class Lorentz(torch.nn.Module):
         #     self.k = k.to(torch.float64)
         # else:
         #     self.k = torch.nn.Parameter(k.to(torch.float64), requires_grad=learnable)
-        self.k = torch.nn.Parameter(k.to(torch.float64), requires_grad=learnable)
+        # self.k = torch.nn.Parameter(k.to(torch.float64), requires_grad=learnable)
+        self.k = k.to(torch.float64)
 
 
 
@@ -53,7 +52,8 @@ class Lorentz(torch.nn.Module):
         #     self.k = k.to(torch.float64)
         # else:
         #     self.k.data = k.to(torch.float64)
-        self.k.data = k.to(torch.float64)
+        # self.k.data = k.to(torch.float64)
+        self.k = k.to(torch.float64)
     def dist(
             self, x: torch.Tensor, y: torch.Tensor, *, keepdim=False, dim=-1,expand_k=False
     ) -> torch.Tensor:

@@ -9,6 +9,7 @@ def weight_init(m):
         nn.init.xavier_uniform_(m.weight,gain=0.5)
         if m.bias is not None:
             nn.init.constant_(m.bias, 0)
+
 class HyperbolicAE(nn.Module):
 
     def __init__(self, args):
@@ -32,12 +33,12 @@ class HyperbolicAE(nn.Module):
             nn.Softplus()
         )
 
-
     def forward(self, x, h, node_mask, edge_mask):
 
         categories, charges = h  # (b,n_atom)
         batch_size, n_nodes = categories.shape
         edges = self.get_adj_matrix(n_nodes,batch_size)  # [rows, cols] rows=cols=(batch_size*n_nodes*n_nodes) value in [0,batch_size*n_nodes)
+
         posterior, distances, edges, node_mask, edge_mask = self.encoder(x, categories, edges, node_mask, edge_mask)
         h = posterior.sample()
         # h = posterior

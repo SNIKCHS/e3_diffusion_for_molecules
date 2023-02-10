@@ -10,9 +10,7 @@ def coord2diff(x, edge_index, norm_constant=1):
     row, col = edge_index
     coord_diff = x[row] - x[col]
     radial = torch.sum((coord_diff) ** 2, 1).unsqueeze(1)
-    norm = torch.sqrt(radial + 1e-8)
-    coord_diff = coord_diff / (norm + norm_constant)
-    return radial, coord_diff
+    return torch.sqrt(radial + 1e-8)
 
 
 class Encoder(nn.Module):
@@ -32,11 +30,11 @@ class Encoder(nn.Module):
         b, n_nodes, _ = h.shape
 
         x = x.view(b * n_nodes, 3)
+        distances = coord2diff(x, edges)  # (b*n_node*n_node,1)
         node_mask = node_mask.view(b * n_nodes, 1)
         edge_mask = edge_mask.view(b * n_nodes * n_nodes, 1)
-        h = h.view(b * n_nodes, -1) * node_mask  # (b*n_atom,n_atom_embed+1)
 
-        distances, _ = coord2diff(x, edges)  # (b*n_node*n_node,1)
+        h = h.view(b * n_nodes, -1) * node_mask  # (b*n_atom,n_atom_embed+1)
 
         output, distances, edges, node_mask, edge_mask = self.encode(h, distances, edges, node_mask, edge_mask)
         # if torch.any(torch.isnan(output)):

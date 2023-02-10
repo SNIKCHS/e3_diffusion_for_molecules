@@ -1,4 +1,6 @@
 """Hyperbolic layers."""
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,8 +8,8 @@ import torch.nn.init as init
 from torch.nn.modules.module import Module
 
 from layers.att_layers import DenseAtt
-from manifold.Lorentz import Lorentz
-# from geoopt import Lorentz
+# from manifold.Lorentz import Lorentz
+from geoopt import Lorentz
 from geoopt import PoincareBall
 
 def get_dim_act_curv(args,num_layers,enc = True):
@@ -31,7 +33,7 @@ def get_dim_act_curv(args,num_layers,enc = True):
     manifold_class = {'PoincareBall':PoincareBall,'Lorentz':Lorentz}
     if args.c is None:
         # create list of trainable curvature parameters
-        manifolds = [manifold_class[args.manifold](1,learnable=False) for _ in range(num_layers + 1)]
+        manifolds = [manifold_class[args.manifold](1,learnable=True) for _ in range(num_layers + 1)]
     else:
         # fixed curvature
         manifolds = [manifold_class[args.manifold](args.c,learnable=False) for _ in range(num_layers + 1)]
@@ -125,6 +127,8 @@ class HGCLayer(nn.Module):
         bias = self.manifold_in.transp0(x, bias)
         res = self.manifold_in.expmap(x, bias)
         return res
+
+
 
     def HypAgg(self, x, edge_attr, edges, node_mask, edge_mask):
         x_tangent = self.manifold_in.logmap0(x)  # (b*n_node,dim)

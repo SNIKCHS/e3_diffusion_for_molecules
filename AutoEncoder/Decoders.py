@@ -87,7 +87,6 @@ class HGCNDecoder(Decoder):
     def __init__(self, manifolds, args):
         super(HGCNDecoder, self).__init__(args)
         dims, acts, self.manifolds = hyp_layers.get_dim_act_curv(args,args.dec_layers,enc=False)
-        self.manifolds[0] = manifolds[-1]
         if args.encdec_share_curvature:
             self.manifolds = manifolds[::-1]
         hgc_layers = []

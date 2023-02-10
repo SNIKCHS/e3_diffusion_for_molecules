@@ -27,25 +27,28 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch, test_HyperbolicDiffusion
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_cwitht')
+parser.add_argument('--exp_name', type=str, default='Diffusion_AE_HGCN_cwitht_6_128')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
 parser.add_argument('--probabilistic_model', type=str, default='hyperbolic_diffusion',
                     help='diffusion')
+parser.add_argument('--wandb_usr', type=str,default='elma')
+parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
+
 
 # Training complexity is O(1) (unaffected), but sampling complexity is O(steps).
 parser.add_argument('--diffusion_steps', type=int, default=1000)
 parser.add_argument('--diffusion_noise_schedule', type=str, default='polynomial_2',
                     help='learned, cosine')
-parser.add_argument('--diffusion_noise_precision', type=float, default=1e-5,
+parser.add_argument('--diffusion_noise_precision', type=float, default=2e-4,
                     )
 parser.add_argument('--diffusion_loss_type', type=str, default='l2',
                     help='vlb, l2')
 parser.add_argument('--seed', type=int, default=1)
 parser.add_argument('--n_epochs', type=int, default=1000)
-parser.add_argument('--batch_size', type=int, default=16)
-parser.add_argument('--lr', type=float, default=1e-4)
+parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--lr', type=float, default=2e-4)
 parser.add_argument('--brute_force', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--actnorm', type=eval, default=True,
@@ -69,7 +72,7 @@ parser.add_argument('--inv_sublayers', type=int, default=1,
                     help='number of layers')
 parser.add_argument('--nf', type=int, default=128,
                     help='dim of EGNN hidden feature')
-parser.add_argument('--dim', type=int, default=20,
+parser.add_argument('--dim', type=int, default=6,
                     help='dim of encoder output')
 parser.add_argument('--tanh', type=eval, default=False,
                     help='use tanh in the coord_mlp')
@@ -90,8 +93,7 @@ parser.add_argument('--filter_n_atoms', type=int, default=None,
 parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
-parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
+
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
 parser.add_argument('--cuda', type=str, default='cuda')
 parser.add_argument('--save_model', type=eval, default=True,
@@ -105,7 +107,7 @@ parser.add_argument("--conditioning", nargs='+', default=[],
                     help='arguments : homo | lumo | alpha | gap | mu | Cv' )
 parser.add_argument('--resume', type=str, default=None,
                     help='')
-parser.add_argument('--start_epoch', type=int, default=10,
+parser.add_argument('--start_epoch', type=int, default=0,
                     help='')
 parser.add_argument('--ema_decay', type=float, default=0.999,
                     help='Amount of EMA decay, 0 means off. A reasonable value'
@@ -118,7 +120,7 @@ parser.add_argument('--normalize_factors', type=eval, default=[1, 1, 1],
 parser.add_argument('--remove_h', action='store_true')
 parser.add_argument('--include_charges', type=eval, default=True,
                     help='include atom charge or not')
-parser.add_argument('--visualize_epoch', type=int, default=10,
+parser.add_argument('--visualize_epoch', type=int, default=5,
                     help="Can be used to visualize multiple times per epoch")
 parser.add_argument('--normalization_factor', type=float, default=1,
                     help="Normalize the sum aggregation of EGNN")
@@ -212,8 +214,8 @@ else:
 args.context_node_nf = context_node_nf
 
 
-AE_state_dict = torch.load('outputs/AE_HGCN_geoopt/AE_ema.npy',map_location=device)
-with open('outputs/AE_HGCN_geoopt/args.pickle', 'rb') as f:
+AE_state_dict = torch.load('outputs/3_3_6_hgcn_wrap_b128_newdist/AE_ema.npy',map_location=device)
+with open('outputs/3_3_6_hgcn_wrap_b128_newdist/args.pickle', 'rb') as f:
     AE_args = pickle.load(f)
 AE_args.dropout = 0
 AutoEncoder = HyperbolicAE(AE_args)
@@ -253,9 +255,9 @@ def main():
     #     model.load_state_dict(flow_state_dict)
     #     optim.load_state_dict(optim_state_dict)
     # args.start_epoch = 423
-    flow_state_dict = torch.load('outputs/Diffusion_AE_HGCN_cwitht/generative_model.npy')
+    # flow_state_dict = torch.load('outputs/Diffusion_AE_HGCN_cwitht/generative_model.npy')
     # optim_state_dict = torch.load('outputs/Diffusion_AE_HGCN_modif/optim.npy')
-    model.load_state_dict(flow_state_dict,False)
+    # model.load_state_dict(flow_state_dict,False)
     # optim.load_state_dict(optim_state_dict)
 
     # Initialize dataparallel if enabled and possible.

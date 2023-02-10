@@ -7,19 +7,15 @@ import torch
 from GraphRicciCurvature.OllivierRicci import OllivierRicci
 from GraphRicciCurvature.FormanRicci import FormanRicci
 # for ARI computation
-from sklearn import preprocessing, metrics
-import GraphRicciCurvature
 
 from qm9 import dataset
+from qm9.visualizer import plot_data3d
 
-def coord2diff(x, edge_index, norm_constant=1):
+def coord2diff(x, edge_index):
     row, col = edge_index
     coord_diff = x[row] - x[col]
     radial = torch.sum((coord_diff) ** 2, 1).unsqueeze(1)
-    norm = torch.sqrt(radial + 1e-8)
-    coord_diff = coord_diff / (norm + norm_constant)
-    return radial, coord_diff
-
+    return torch.sqrt_(radial + 1e-8)
 def get_adj_matrix(n_nodes):
     # 对每个n_nodes，batch_size只要算一次
 
@@ -62,8 +58,7 @@ categories = (torch.argmax(one_hot.int(), dim=2) + 1) * node_mask.squeeze() # b,
 
 atom_charge_dict = {1: 'H', 2: 'C', 3: 'N', 4: 'O', 5: 'F'}
 edge = get_adj_matrix(n_nodes)
-dist,_ = coord2diff(x,edge)
-
+dist = coord2diff(x,edge)
 G = nx.Graph()
 for i in range(len(edge[0])):
     a = edge[0][i]
@@ -71,8 +66,8 @@ for i in range(len(edge[0])):
     if a<b and categories[0,a]!=0 and categories[0,b]!=0:
         a_type = atom_charge_dict[categories[0,a].item()]+str(a.item())
         b_type = atom_charge_dict[categories[0,b].item()]+str(b.item())
-        print(a_type, b_type, dist[i].item())
-        if dist[i]<5:
+        # print(a_type, b_type, dist[i].item())
+        if dist[i]<2:
             G.add_edge(a_type, b_type, dist=dist[i].item())
 
 
@@ -84,9 +79,9 @@ for i in range(len(edge[0])):
 
 # for (n1, n2, d) in G.edges(data=True):
 #     d.clear()   # remove edge weight
-print(nx.info(G))
+# print(nx.info(G))
 
-orc = OllivierRicci(G, weight='dist', alpha=0.9, verbose="TRACE")
+orc = OllivierRicci(G, weight='dist', alpha=0.5)
 
 orc.compute_ricci_curvature()
 G_orc = orc.G.copy()
@@ -98,7 +93,7 @@ for n, coor in pos_nodes.items():
     pos_attr[n] = (coor[0], coor[1] - 0.08)
 # print(nx.get_node_attributes())
 node_attr = nx.get_node_attributes(G_orc, "ricciCurvature")
-print(node_attr)
+# print(node_attr)
 cus_node_attr = {}
 for n, attr in node_attr.items():
     cus_node_attr[n] = "c : %.2f" % (attr)
@@ -108,12 +103,12 @@ plt.savefig('graph.svg')
 
 def show_results(G, curvature="ricciCurvature"):
     # Print the first five results
-    print("Karate Club Graph, first 5 edges: ")
+    # print("Karate Club Graph, first 5 edges: ")
 
     # for n1, n2 in list(G.edges()):
     #     print("Ricci curvature of edge (%s,%s) is %f" % (n1, n2, G[n1][n2][curvature]))
-    for n in list(G.nodes()):
-        print("Ricci curvature of node (%s) is %f" % (n, G.nodes[n][curvature]))
+    # for n in list(G.nodes()):
+    #     print("Ricci curvature of node (%s) is %f" % (n, G.nodes[n][curvature]))
 
     # Plot the histogram of Ricci curvatures
     plt.subplot(2, 1, 1)

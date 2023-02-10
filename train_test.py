@@ -55,7 +55,9 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
             raise AssertionError
 
         loss.backward()
-
+        # for n,p in model.named_parameters():
+        #     print(n)
+        #     print(p.grad)
         if args.clip_grad:
             grad_norm = utils.gradient_clipping(model, gradnorm_queue)
         else:
@@ -77,18 +79,20 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         nll_epoch.append(loss.item())
         wandb.log({"Batch NLL": loss.item(), 'rec_loss': rec_loss.item(), 'KL_loss': KL_loss.item(),'edge_loss': edge_loss.item()},
                   commit=True)
-        # model.show_curvatures()
+    model.show_curvatures()
     wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
 
 
 def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms,
                                     optim, nodes_dist, gradnorm_queue, dataset_info, prop_dist):
+    # torch.autograd.set_detect_anomaly(True)
     model_dp.train()
     model.train()
     nll_epoch = []
     n_iterations = len(loader)
 
     for i, data in enumerate(loader):
+        start = time.time()
         x = data['positions'].to(device, dtype)
         node_mask = data['atom_mask'].to(device, dtype).unsqueeze(2)
         edge_mask = data['edge_mask'].to(device, dtype)
@@ -152,7 +156,8 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
             print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
                   f"Loss {loss.item():.4f}, NLL: {nll.item():.4f}, "
                   f"RegTerm: {reg_term.item():.1f}, "
-                  f"GradNorm: {grad_norm:.1f}, abs_z: {mean_abs_z.item():.6f}")
+                  f"GradNorm: {grad_norm:.1f}, abs_z: {mean_abs_z.item():.6f} "
+                  f"time:{time.time() - start:.4f}")
 
         nll_epoch.append(nll.item())
         wandb.log({"Batch NLL": nll.item(), 'abs_z': mean_abs_z.item()}, commit=True)
@@ -190,6 +195,7 @@ def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dt
     nll_epoch = []
     n_iterations = len(loader)
     for i, data in enumerate(loader):
+        start = time.time()
         x = data['positions'].to(device, dtype)
         node_mask = data['atom_mask'].to(device, dtype).unsqueeze(2)
         edge_mask = data['edge_mask'].to(device, dtype)
@@ -242,7 +248,8 @@ def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dt
             print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
                   f"Loss {loss.item():.4f}, NLL: {nll.item():.4f}, abs_z: {mean_abs_z.item():.6f} "
                   f"RegTerm: {reg_term.item():.1f}, "
-                  f"GradNorm: {grad_norm:.1f}")
+                  f"GradNorm: {grad_norm:.1f}"
+                  f"time:{time.time() - start:.4f}")
         nll_epoch.append(nll.item())
         wandb.log({"Batch NLL": nll.item(), 'abs_z': mean_abs_z.item()}, commit=True)
         if args.break_train_epoch:

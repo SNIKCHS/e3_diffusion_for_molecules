@@ -25,6 +25,7 @@ class DenseAtt(nn.Module):
         #     nn.Sigmoid()
         # )
         # self.h_gauss = nn.Parameter(torch.Tensor(1))
+
         self.att_mlp = nn.Sequential(
             nn.Linear(2 * in_features + edge_dim, in_features, bias=True),
             nn.SiLU(),

@@ -38,7 +38,7 @@ parser.add_argument('--diffusion_loss_type', type=str, default='l2',
                     help='vlb, l2')
 
 parser.add_argument('--n_epochs', type=int, default=1000)
-parser.add_argument('--batch_size', type=int, default=16)
+parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--brute_force', type=eval, default=False,
                     help='True | False')
@@ -61,7 +61,7 @@ parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
 parser.add_argument('--inv_sublayers', type=int, default=1,
                     help='number of layers')
-parser.add_argument('--nf', type=int, default=256,
+parser.add_argument('--nf', type=int, default=128,  # 256
                     help='dim of EGNN hidden feature')
 parser.add_argument('--tanh', type=eval, default=True,
                     help='use tanh in the coord_mlp')
