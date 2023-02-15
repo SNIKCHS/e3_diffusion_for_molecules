@@ -160,14 +160,14 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
                   f"time:{time.time() - start:.4f}")
 
         nll_epoch.append(nll.item())
-        wandb.log({"Batch NLL": nll.item(), 'abs_z': mean_abs_z.item()}, commit=True)
+        wandb.log({"Batch NLL": nll.item(), 'abs_z': mean_abs_z.item(),'epoch': epoch}, commit=True)
         if args.break_train_epoch:
             break
 
     # sample_different_sizes_and_save(model_dp, nodes_dist, args, device, dataset_info,
     #                                 prop_dist, epoch=epoch)
     # vis.visualize(f"outputs/{args.exp_name}/epoch_{epoch}_", dataset_info=dataset_info, wandb=wandb)
-    if epoch % args.visualize_epoch == 0:
+    if epoch % args.visualize_epoch == 0 and epoch != 0:
         start = time.time()
         if len(args.conditioning) > 0:
             save_and_sample_conditional(args, device, model_ema, prop_dist, dataset_info, epoch=epoch)
@@ -185,7 +185,7 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
         if len(args.conditioning) > 0:
             vis.visualize_chain("outputs/%s/epoch_%d_/conditional/" % (args.exp_name, epoch), dataset_info,
                                 wandb=wandb, mode='conditional')
-    wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
+    wandb.log({"Train Epoch NLL": np.mean(nll_epoch),'epoch': epoch}, commit=False)
 
 
 def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
@@ -467,7 +467,7 @@ def analyze_and_save(epoch, model_sample, nodes_dist, args, device, dataset_info
 
     wandb.log(validity_dict)
     if rdkit_tuple is not None:
-        wandb.log({'epoch':epoch,'Validity': rdkit_tuple[0][0], 'Uniqueness': rdkit_tuple[0][1], 'Novelty': rdkit_tuple[0][2]})
+        wandb.log({'Validity': rdkit_tuple[0][0], 'Uniqueness': rdkit_tuple[0][1], 'Novelty': rdkit_tuple[0][2]})
         print('Validity:', rdkit_tuple[0][0], ' Uniqueness:', rdkit_tuple[0][1], ' Novelty:', rdkit_tuple[0][2])
 
     # model_sample.change_device(device_back)

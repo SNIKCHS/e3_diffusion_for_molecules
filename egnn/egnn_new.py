@@ -465,6 +465,7 @@ class EGNN(nn.Module):
             edge_feat_nf = 3
             self.manifolds = [Lorentz(k_is_vary=True) for _ in range(n_layers+1)]
             self.embedding = HypLinear(in_node_nf, self.hidden_nf,self.manifolds[0])
+            self.embedding_out = HypLinear(self.hidden_nf, out_node_nf, self.manifolds[0])
             # self.embedding_out = HypLinear(self.hidden_nf, out_node_nf,self.manifolds[-1])
             self.curvature_net = nn.Sequential(
                 nn.Linear(1,64),
@@ -476,7 +477,7 @@ class EGNN(nn.Module):
             )
         else:
             self.embedding = nn.Linear(in_node_nf, self.hidden_nf)
-        self.embedding_out = nn.Linear(self.hidden_nf, out_node_nf)
+            self.embedding_out = nn.Linear(self.hidden_nf, out_node_nf)
 
         if hyp:
             for i in range(0, n_layers):
@@ -526,12 +527,9 @@ class EGNN(nn.Module):
 
         # Important, the bias of the last linear might be non-zero
 
-
-        if self.hyp:
-            h = self.manifolds[-1].logmap0(h)
-            h = self.proj_tan0(h)
         h = self.embedding_out(h)
         if self.hyp:
+            h = self.manifolds[-1].logmap0(h)
             h = self.proj_tan0(h)
         # print('hout:', h, h[:3])
         if node_mask is not None:

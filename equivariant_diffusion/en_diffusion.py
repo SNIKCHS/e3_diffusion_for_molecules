@@ -198,7 +198,7 @@ class PredefinedNoiseSchedule(torch.nn.Module):
 
         print('gamma', -log_alphas2_to_sigmas2)
 
-        self.gamma = torch.nn.Parameter(
+        self.gamma = torch.nn.Parameter(  # -log(alpha2/sigmas2)
             torch.from_numpy(-log_alphas2_to_sigmas2).float(),
             requires_grad=False)
 
@@ -898,6 +898,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         # self.atom_charge_dict = {'H': 1, 'C': 6, 'N': 7, 'O': 8, 'F': 9}
         self.atom_decoder = torch.tensor([1, 6, 7, 8, 9], device=self.device)
 
+
     def normalize(self, x, h=None, node_mask=None):
         delta_log_px = None
         if x is not None:
@@ -962,8 +963,8 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
     def compute_error(self, net_out, gamma_t, eps):
         """Computes error, i.e. the most likely prediction of x."""
         eps_t = net_out
-        print('eps:',eps[0,:1])
-        print('eps_t:',eps_t[0,:1])
+        # print('eps:',eps[0,:1])
+        # print('eps_t:',eps_t[0,:1])
         if self.training and self.loss_type == 'l2':
 
             x_norm = self.n_dims * eps_t.shape[1] # 3 * n_nodes
@@ -974,7 +975,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
             # print('x_err:',error_x.sum()/error.sum(),' feat_err:',error_t.sum()/error.sum())
         else:
             error = sum_except_batch((eps - eps_t) ** 2)
-        return error
+        return torch.sqrt(error)
 
     def proj_tan0(self, u):
         u[..., 0] = 0.0
@@ -1013,13 +1014,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         """Computes an estimator for the variational lower bound, or the simple loss (MSE)."""
 
         # This part is about whether to include loss term 0 always.
-        if t0_always:
-            # loss_term_0 will be computed separately.
-            # estimator = loss_0 + loss_t,  where t ~ U({1, ..., T})
-            lowest_t = 1
-        else: # Train
-            # estimator = loss_t,           where t ~ U({0, ..., T})
-            lowest_t = 0
+        lowest_t = 1
 
         # Sample a timestep t.
         t_int = torch.randint(  # batch_size维度是不同的t
@@ -1058,7 +1053,11 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         # print('net_out:', net_out[0, 0])
         # Compute the error.
 
-        error = self.compute_error(net_out, gamma_t, eps)
+        sigma2_t_given_s, sigma_t_given_s, alpha_t_given_s = \
+            self.sigma_and_alpha_t_given_s(gamma_t, gamma_s, z_t)
+        mean_tilde = (z_t - (sigma2_t_given_s / sigma_t) * eps)/ alpha_t_given_s
+
+        error = self.compute_error(net_out, gamma_t, mean_tilde)
 
         if self.training and self.loss_type == 'l2':
             SNR_weight = torch.ones_like(error)
@@ -1068,11 +1067,6 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         assert error.size() == SNR_weight.size()
         loss_t_larger_than_zero = 0.5 * SNR_weight * error  # L1~T 系数都是0.5 * SNR_weight
 
-        # The _constants_ depending on sigma_0 from the
-        # cross entropy term E_q(z0 | x) [log p(x | z0)].
-        if not self.training:
-            neg_log_constants = -self.log_constants_p_x_given_z0(x, node_mask)
-
         # Reset constants during training with l2 loss.
         # if self.training and self.loss_type == 'l2':
         #     neg_log_constants = torch.zeros_like(neg_log_constants)
@@ -1080,61 +1074,22 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         # The KL between q(z1 | x) and p(z1) = Normal(0, 1). Should be close to zero.
         kl_prior = self.kl_prior(xh, node_mask)  # L_base
 
-        # Combining the terms
-        if t0_always:  # 验证时
-            loss_t = loss_t_larger_than_zero
-            num_terms = self.T  # Since t=0 is not included here.
-            estimator_loss_terms = num_terms * loss_t  # T*Lt
+        loss_t = loss_t_larger_than_zero
 
-            # Compute noise values for t = 0.
-            t_zeros = torch.zeros_like(s)
-            gamma_0 = self.inflate_batch_array(self.gamma(t_zeros), x)
-            alpha_0 = self.alpha(gamma_0, x)
-            sigma_0 = self.sigma(gamma_0, x)
-
-            # Sample z_0 given x, h for timestep t, from q(z_t | x, h)
-            eps_0 = self.sample_combined_position_feature_noise(
-                n_samples=x.size(0), n_nodes=x.size(1), node_mask=node_mask)
-
-            z_0 = alpha_0 * xh + sigma_0 * eps_0
-            net_out = self.phi(z_0, t_zeros, node_mask, edge_mask, context)  # 预测噪声
-
-            # loss_term_0 = -self.log_pxh_given_z0_without_constants(
-            #     x, h, z_0, gamma_0, eps_0, net_out, node_mask)
-            loss_term_0 = -0.5 * self.compute_error(net_out, gamma_t, eps_0)
-
-            assert kl_prior.size() == estimator_loss_terms.size()
-            assert kl_prior.size() == neg_log_constants.size()
-            assert kl_prior.size() == loss_term_0.size()
-
-            loss = kl_prior + estimator_loss_terms + neg_log_constants + loss_term_0
-
+        # Only upweigh estimator if using the vlb objective.
+        if self.training and self.loss_type == 'l2': # default
+            estimator_loss_terms = loss_t
         else:
-            # Computes the L_0 term (even if gamma_t is not actually gamma_0)
-            # and this will later be selected via masking.
-            # loss_term_0 = -self.log_pxh_given_z0_without_constants(
-            #     x, h, z_t, gamma_t, eps, net_out, node_mask)
-            # t_is_not_zero = 1 - t_is_zero
-            #
-            # loss_t = loss_term_0 * t_is_zero.squeeze() + t_is_not_zero.squeeze() * loss_t_larger_than_zero
-            loss_t = loss_t_larger_than_zero
+            num_terms = self.T # Includes t = 0.
+            estimator_loss_terms = num_terms * loss_t
 
-            # Only upweigh estimator if using the vlb objective.
-            if self.training and self.loss_type == 'l2': # default
-                estimator_loss_terms = loss_t
-            else:
-                num_terms = self.T + 1  # Includes t = 0.
-                estimator_loss_terms = num_terms * loss_t
+        # assert kl_prior.size() == neg_log_constants.size()
 
-            assert kl_prior.size() == estimator_loss_terms.size()
-            # assert kl_prior.size() == neg_log_constants.size()
-
-            # loss = kl_prior + estimator_loss_terms + neg_log_constants  # neg_log_constants 训练时为0
-            loss = kl_prior + estimator_loss_terms
-        assert len(loss.shape) == 1, f'{loss.shape} has more than only batch dim.'
+        # loss = kl_prior + estimator_loss_terms + neg_log_constants  # neg_log_constants 训练时为0
+        loss = kl_prior + estimator_loss_terms
 
         return loss, {'t': t_int.squeeze(), 'loss_t': loss.squeeze(),
-                      'error': error.squeeze().mean()}
+                          'error': error.squeeze().mean()}
 
     def sample_normal(self, mu, sigma, node_mask, fix_noise=False):
         """Samples from a Normal distribution."""
@@ -1156,11 +1111,11 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         # Neural net prediction.
 
-        eps_t = self.phi(zt, t, node_mask, edge_mask, context)  # tan0
+        mu = self.phi(zt, t, node_mask, edge_mask, context)  # tan0
         # print('eps_t:',torch.max(eps_t.view(-1)),torch.min(eps_t.view(-1)))
         # print('zt:', torch.max(zt.view(-1)), torch.min(zt.view(-1)))
         # Compute mu for p(zs | zt).
-        mu = zt / alpha_t_given_s - (sigma2_t_given_s / alpha_t_given_s / sigma_t) * eps_t
+        # mu = (zt  - (sigma2_t_given_s / sigma_t) * eps_t) / alpha_t_given_s
         # print(mu)
         # Compute sigma for p(zs | zt).
         sigma = sigma_t_given_s * sigma_s / sigma_t
@@ -1168,38 +1123,20 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         # Sample zs given the paramters derived from zt.
         zs = self.sample_normal(mu, sigma, node_mask, fix_noise)
         # print('sample_zs:max:', torch.max(zs.view(-1)),'min:', torch.min(zs.view(-1)))
+        x = diffusion_utils.remove_mean_with_mask(zs[:, :, :self.n_dims], node_mask)
         zs_to_loop = torch.cat(
-            [diffusion_utils.remove_mean_with_mask(zs[:, :, :self.n_dims],
-                                                   node_mask),
+            [x,
              zs[:, :, self.n_dims:]], dim=2
         )
 
         # Project down to avoid numerical runaway of the center of gravity.
-        x = diffusion_utils.remove_mean_with_mask(zs[:, :, :self.n_dims], node_mask)
+
         h = zs[:, :, self.n_dims:]
         h = self.decode(x, h, node_mask, edge_mask)
         zs = torch.cat([x, h['categorical'], h['integer']], dim=2)
 
-        return zs, zs_to_loop
+        return zs, zs_to_loop,x,h
 
-    def sample_p_xh_given_z0(self, z0, node_mask, edge_mask, context, fix_noise=False):
-        """Samples x ~ p(x|z0)."""
-        zeros = torch.zeros(size=(z0.size(0), 1), device=z0.device)
-        gamma_0 = self.gamma(zeros)
-        # Computes sqrt(sigma_0^2 / alpha_0^2)
-        sigma_x = self.SNR(-0.5 * gamma_0).unsqueeze(1)
-        net_out = self.phi(z0, zeros, node_mask, edge_mask, context)
-
-        # Compute mu for p(zs | zt).
-        mu_x = self.compute_x_pred(net_out, z0, gamma_0)
-        xh = self.sample_normal(mu=mu_x, sigma=sigma_x, node_mask=node_mask, fix_noise=fix_noise)
-
-        x = xh[:, :, :self.n_dims] * node_mask
-        h = xh[:, :, self.n_dims:]
-        x, h = self.unnormalize(x, h, node_mask)
-        h = self.decode(x, h, node_mask, edge_mask)
-
-        return x, h
 
     @torch.no_grad()  # 不加的话会在EGNN的循环block的forward时保存所有信息，而采样会循环1000次造成内存爆炸
     def sample(self, n_samples, n_nodes, node_mask, edge_mask, context, fix_noise=False):
@@ -1215,22 +1152,21 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         diffusion_utils.assert_mean_zero_with_mask(z[:, :, :self.n_dims], node_mask)
 
         # Iteratively sample p(z_s | z_t) for t = 1, ..., T, with s = t - 1.
+        x,h = None,None
         for s in reversed(range(0, self.T)):
             s_array = torch.full((n_samples, 1), fill_value=s, device=z.device)
             t_array = s_array + 1
             s_array = s_array / self.T
             t_array = t_array / self.T
             # print('z_beg:', torch.max(z.view(-1)), torch.min(z.view(-1)))
-            _, z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context, fix_noise=fix_noise)
+            zs, z,x,h = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context, fix_noise=fix_noise)
 
         # Finally sample p(x, h | z_0).
-        x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context, fix_noise=fix_noise)
-
-        max_cog = torch.sum(x, dim=1, keepdim=True).abs().max().item()
-        if max_cog > 5e-2:
-            print(f'Warning cog drift with error {max_cog:.3f}. Projecting '
-                  f'the positions down.')
-            x = diffusion_utils.remove_mean_with_mask(x, node_mask)
+        # max_cog = torch.sum(x, dim=1, keepdim=True).abs().max().item()
+        # if max_cog > 5e-2:
+        #     print(f'Warning cog drift with error {max_cog:.3f}. Projecting '
+        #           f'the positions down.')
+        #     x = diffusion_utils.remove_mean_with_mask(x, node_mask)
 
         return x, h
 
@@ -1272,23 +1208,19 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         chain = torch.zeros((keep_frames, z.size(0), z.size(1), outdim), device=z.device)
 
         # Iteratively sample p(z_s | z_t) for t = 1, ..., T, with s = t - 1.
+        z_chain = None
         for s in reversed(range(0, self.T)):
             s_array = torch.full((n_samples, 1), fill_value=s, device=z.device)
             t_array = s_array + 1
             s_array = s_array / self.T
             t_array = t_array / self.T
 
-            z_chain, z = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context)
+            z_chain, z,_,_ = self.sample_p_zs_given_zt(s_array, t_array, z, node_mask, edge_mask, context)
 
             # Write to chain tensor.
             write_index = (s * keep_frames) // self.T
             chain[write_index] = self.unnormalize_z(z_chain, node_mask)
 
-        # Finally sample p(x, h | z_0).
-        x, h = self.sample_p_xh_given_z0(z, node_mask, edge_mask, context)
-
-        chain[0] = torch.cat([x, h['categorical'], h['integer']],
-                             dim=2)  # Overwrite last frame with the resulting x and h.
         chain_flat = chain.view(n_samples * keep_frames, z.size(1), outdim)
 
         return chain_flat
