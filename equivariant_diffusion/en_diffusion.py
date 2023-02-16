@@ -455,13 +455,18 @@ class EnVariationalDiffusion(torch.nn.Module):
     def compute_error(self, net_out, gamma_t, eps):
         """Computes error, i.e. the most likely prediction of x."""
         eps_t = net_out
-        print('eps:', eps[0, :1])
-        print('eps_t:', eps_t[0, :1])
         if self.training and self.loss_type == 'l2':
             denom = (self.n_dims + self.in_node_nf) * eps_t.shape[1]
             error = sum_except_batch((eps - eps_t) ** 2) / denom
+            # x_norm = self.n_dims * eps_t.shape[1]  # 3 * n_nodes
+            # t_norm = self.in_node_nf * eps_t.shape[1]  # 20 * n_nodes
+            # error_x = sum_except_batch((eps[..., :3] - eps_t[..., :3]) ** 2) / x_norm
+            # error_t = sum_except_batch((eps[..., 3:] - eps_t[..., 3:]) ** 2) / t_norm
+            # error = error_x+error_t
+            # print('x_err:', error_x.sum() / error.sum(), ' feat_err:', error_t.sum() / error.sum())
         else:
             error = sum_except_batch((eps - eps_t) ** 2)
+
         return error
 
     def log_constants_p_x_given_z0(self, x, node_mask):
@@ -631,9 +636,9 @@ class EnVariationalDiffusion(torch.nn.Module):
 
         # Neural net prediction. 拟合噪声
         net_out = self.phi(z_t, t, node_mask, edge_mask, context)
-        # print('t:', t[0, 0])
-        # print('eps:', eps[0, 0])
-        # print('net_out:', net_out[0, 0])
+        print('t:', t[0, 0])
+        print('eps:', eps[0, 0])
+        print('net_out:', net_out[0, 0])
         # Compute the error.
         error = self.compute_error(net_out, gamma_t, eps)
 
@@ -962,19 +967,22 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
     def compute_error(self, net_out, gamma_t, eps):
         """Computes error, i.e. the most likely prediction of x."""
         eps_t = net_out
-        print('eps:',eps[0,:1])
-        print('eps_t:',eps_t[0,:1])
+        # print('eps:',eps[0,:1])
+        # print('eps_t:',eps_t[0,:1])
         if self.training and self.loss_type == 'l2':
-
+            # denom = (self.n_dims + self.in_node_nf) * eps_t.shape[1]
+            # error = sum_except_batch((eps - eps_t) ** 2) / denom
             x_norm = self.n_dims * eps_t.shape[1] # 3 * n_nodes
             t_norm = self.in_node_nf * eps_t.shape[1] # 20 * n_nodes
             error_x = sum_except_batch((eps[..., :3] - eps_t[..., :3]) ** 2) / x_norm
             error_t = sum_except_batch((eps[..., 3:] - eps_t[..., 3:]) ** 2) / t_norm
             error = error_x + error_t
             # print('x_err:',error_x.sum()/error.sum(),' feat_err:',error_t.sum()/error.sum())
+            return error, error_x.squeeze().mean(), error_t.squeeze().mean()
         else:
             error = sum_except_batch((eps - eps_t) ** 2)
-        return error
+            return error, None,None
+
 
     def proj_tan0(self, u):
         u[..., 0] = 0.0
@@ -1053,12 +1061,12 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         z_t = alpha_t * xh + sigma_t * eps
         # Neural net prediction. 拟合噪声
         net_out = self.phi(z_t, t, node_mask, edge_mask, context, edge)
-        # print('t:', t[0, 0])
-        # print('eps:', eps[0, 0])
-        # print('net_out:', net_out[0, 0])
+        print('t:', t[0, 0])
+        print('eps:', eps[0, 0])
+        print('net_out:', net_out[0, 0])
         # Compute the error.
 
-        error = self.compute_error(net_out, gamma_t, eps)
+        error,error_x,error_t = self.compute_error(net_out, gamma_t, eps)
 
         if self.training and self.loss_type == 'l2':
             SNR_weight = torch.ones_like(error)
@@ -1101,7 +1109,8 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
             # loss_term_0 = -self.log_pxh_given_z0_without_constants(
             #     x, h, z_0, gamma_0, eps_0, net_out, node_mask)
-            loss_term_0 = -0.5 * self.compute_error(net_out, gamma_t, eps_0)
+            loss_term_0,_,_ = self.compute_error(net_out, gamma_t, eps_0)
+            loss_term_0 = -0.5 * loss_term_0
 
             assert kl_prior.size() == estimator_loss_terms.size()
             assert kl_prior.size() == neg_log_constants.size()
@@ -1134,7 +1143,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         assert len(loss.shape) == 1, f'{loss.shape} has more than only batch dim.'
 
         return loss, {'t': t_int.squeeze(), 'loss_t': loss.squeeze(),
-                      'error': error.squeeze().mean()}
+                      'error': error.squeeze().mean(),'error_x':error_x,'error_t':error_t}
 
     def sample_normal(self, mu, sigma, node_mask, fix_noise=False):
         """Samples from a Normal distribution."""

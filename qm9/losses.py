@@ -38,4 +38,4 @@ def compute_loss_and_nll(args, generative_model, nodes_dist, x, h, node_mask, ed
     else:
         raise ValueError(args.probabilistic_model)
 
-    return nll, reg_term, mean_abs_z
+    return nll, reg_term, mean_abs_z,loss_dict['error_x'],loss_dict['error_t']

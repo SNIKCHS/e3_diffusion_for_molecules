@@ -212,6 +212,7 @@ class EGNN_Lorentz_dynamics_QM9(nn.Module):
 
             h_final, x_final = self.egnn(h, x, edges, node_mask=node_mask, edge_mask=edge_mask,t=h_time)
             vel = (x_final - x) * node_mask  # This masking operation is redundant but just in case
+            # vel = x_final
         elif self.mode == 'gnn_dynamics':
             xh = torch.cat([x, h], dim=1)
             output = self.gnn(xh, edges, node_mask=node_mask)
