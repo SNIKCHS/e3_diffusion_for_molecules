@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from egnn.egnn_new import EGNN, GNN
+from egnn.graph_unet import UNet
 from equivariant_diffusion.utils import remove_mean, remove_mean_with_mask
 import numpy as np
 
@@ -150,13 +151,20 @@ class EGNN_Lorentz_dynamics_QM9(nn.Module):
                  inv_sublayers=2, sin_embedding=False, normalization_factor=100, aggregation_method='sum',hyp=False):
         super().__init__()
         self.mode = mode
-        self.egnn = EGNN(
+        # self.egnn = EGNN(
+        #     in_node_nf=in_node_nf + context_node_nf, in_edge_nf=1,
+        #     hidden_nf=hidden_nf, device=device, act_fn=act_fn,
+        #     n_layers=n_layers, attention=attention, tanh=tanh, norm_constant=norm_constant,
+        #     inv_sublayers=inv_sublayers, sin_embedding=sin_embedding,
+        #     normalization_factor=normalization_factor,
+        #     aggregation_method=aggregation_method,hyp=hyp)
+        self.egnn = UNet(
             in_node_nf=in_node_nf + context_node_nf, in_edge_nf=1,
             hidden_nf=hidden_nf, device=device, act_fn=act_fn,
             n_layers=n_layers, attention=attention, tanh=tanh, norm_constant=norm_constant,
             inv_sublayers=inv_sublayers, sin_embedding=sin_embedding,
             normalization_factor=normalization_factor,
-            aggregation_method=aggregation_method,hyp=hyp)
+            aggregation_method=aggregation_method, hyp=hyp)
         self.in_node_nf = in_node_nf
 
 

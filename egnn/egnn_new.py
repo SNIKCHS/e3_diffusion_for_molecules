@@ -481,14 +481,14 @@ class EGNN(nn.Module):
             self.manifolds = [geoopt.Lorentz(1,learnable=True) for _ in range(n_layers+1)]
             self.embedding = HypLinear(in_node_nf, self.hidden_nf,self.manifolds[0])
             # self.embedding_out = HypLinear(self.hidden_nf, out_node_nf,self.manifolds[-1])
-            self.curvature_net = nn.Sequential(
-                nn.Linear(1,64),
-                nn.SiLU(),
-                nn.Linear(64, 64),
-                nn.SiLU(),
-                nn.Linear(64, n_layers+1), # [b,20][20,n_layers+1]
-                nn.Softplus()
-            )
+            # self.curvature_net = nn.Sequential(
+            #     nn.Linear(1,64),
+            #     nn.SiLU(),
+            #     nn.Linear(64, 64),
+            #     nn.SiLU(),
+            #     nn.Linear(64, n_layers+1), # [b,20][20,n_layers+1]
+            #     nn.Softplus()
+            # )
         else:
             self.embedding = nn.Linear(in_node_nf, self.hidden_nf)
         self.embedding_out = nn.Linear(self.hidden_nf, out_node_nf)
@@ -534,6 +534,7 @@ class EGNN(nn.Module):
         if self.hyp:
             h = self.manifolds[0].expmap0(h)
         h = self.embedding(h)  # default: (b*n_nodes,hidden_nf=128)
+
 
         for i in range(0, self.n_layers):
             h, x = self._modules["e_block_%d" % i](h, x, edge_index, node_mask=node_mask, edge_mask=edge_mask, edge_attr=distances)
