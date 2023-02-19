@@ -57,7 +57,7 @@ class HGCL(nn.Module):
         self.bias = nn.Parameter(torch.Tensor(1, out_features))
         self.linear = nn.Linear(in_features, out_features, bias=False)
 
-        self.normalization_factor = 100
+        self.normalization_factor = 1
         self.aggregation_method = 'sum'
         self.att = DenseAtt(out_features,dropout=dropout, edge_dim=edge_dim)
         # self.node_mlp = nn.Sequential(

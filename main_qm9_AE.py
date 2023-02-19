@@ -72,7 +72,7 @@ parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
 parser.add_argument('--inv_sublayers', type=int, default=1,
                     help='number of layers')
-parser.add_argument('--nf', type=int, default=256,
+parser.add_argument('--nf', type=int, default=128,
                     help='dim of EGNN hidden feature')
 parser.add_argument('--dim', type=int, default=6,
                     help='dim of encoder output')
@@ -230,7 +230,6 @@ model, nodes_dist, prop_dist = get_model(args, device, dataset_info, dataloaders
 tot_params = sum([np.prod(p.size()) for p in model.parameters()])
 print(f"Total number of parameters: {tot_params}")
 # 1580999.0 128
-# 4102359.0 tow
 # 5578055.0 256
 #  817481.0 u 7
 # 1433839.0 u 16
