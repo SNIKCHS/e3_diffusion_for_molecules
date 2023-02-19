@@ -23,11 +23,12 @@ from equivariant_diffusion import utils as flow_utils
 import torch
 import time
 import pickle
+from timm import scheduler
 from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch, test_HyperbolicDiffusion
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='HGDM_GCN_6_128_UNet')
+parser.add_argument('--exp_name', type=str, default='HGDM_HGCN_6_128_UNet')
 # parser.add_argument('--exp_name', type=str, default='HGDM_GCN_6_256')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
@@ -65,13 +66,13 @@ parser.add_argument('--clip_grad', type=eval, default=True,
 parser.add_argument('--trace', type=str, default='hutch',
                     help='hutch | exact')
 # EGNN args -->
-parser.add_argument('--hyp', type=eval, default=False,
+parser.add_argument('--hyp', type=eval, default=True,
                     help='use hyperbolic gcl')
 parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
 parser.add_argument('--inv_sublayers', type=int, default=1,
                     help='number of layers')
-parser.add_argument('--nf', type=int, default=128,
+parser.add_argument('--nf', type=int, default=256,
                     help='dim of EGNN hidden feature')
 parser.add_argument('--dim', type=int, default=6,
                     help='dim of encoder output')
@@ -226,6 +227,15 @@ Decoder = AutoEncoder.decoder
 
 # Create EGNN flow
 model, nodes_dist, prop_dist = get_model(args, device, dataset_info, dataloaders['train'],encoder=Encoder,decoder=Decoder)  # model=EnVariationalDiffusion 包含EGNN_dynamics_QM9
+tot_params = sum([np.prod(p.size()) for p in model.parameters()])
+print(f"Total number of parameters: {tot_params}")
+# 1580999.0 128
+# 4102359.0 tow
+# 5578055.0 256
+#  817481.0 u 7
+# 1433839.0 u 16
+# exit(0)
+
 if prop_dist is not None:
     prop_dist.set_normalizer(property_norms)
 model = model.to(device)
@@ -238,7 +248,7 @@ optim = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr, amsgrad=True,
         weight_decay=1e-12)
-
+# lr_schedule = scheduler.CosineLRScheduler(optim,t_initial=args.n_epochs,lr_min=args.lr,warmup_t=4,warmup_lr_init=2e-5)
 gradnorm_queue = utils.Queue()
 gradnorm_queue.add(3000)  # Add large value that will be flushed.
 
@@ -306,6 +316,7 @@ def main():
                     model_ema=model_ema, ema=ema, device=device, dtype=dtype, property_norms=property_norms,
                     nodes_dist=nodes_dist, dataset_info=dataset_info,
                     gradnorm_queue=gradnorm_queue, optim=optim, prop_dist=prop_dist)
+        # lr_schedule.step(epoch)
         # utils.save_model(optim, 'outputs/%s/optim_%d.npy' % (args.exp_name, epoch))
         # utils.save_model(model, 'outputs/%s/generative_model_%d.npy' % (args.exp_name, epoch))
         print(f"Epoch took {time.time() - start_epoch:.1f} seconds.")

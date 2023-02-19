@@ -162,3 +162,6 @@ class Lorentz:
         return geoopt.ManifoldTensor(zero_point, manifold=self)
 
     retr = expmap
+    def to_poincare(self,x, dim=-1):
+        x = x.to(torch.float64)
+        return math.lorentz_to_poincare(x,k=self.k, dim=dim).to(torch.get_default_dtype())

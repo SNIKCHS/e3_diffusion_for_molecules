@@ -1169,7 +1169,8 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         # print('eps_t:',torch.max(eps_t.view(-1)),torch.min(eps_t.view(-1)))
         # print('zt:', torch.max(zt.view(-1)), torch.min(zt.view(-1)))
         # Compute mu for p(zs | zt).
-        mu = zt / alpha_t_given_s - (sigma2_t_given_s / alpha_t_given_s / sigma_t) * eps_t
+        # mu = zt / alpha_t_given_s - (sigma2_t_given_s / alpha_t_given_s / sigma_t) * eps_t
+        mu = (zt - (sigma2_t_given_s / sigma_t) * eps_t) / alpha_t_given_s
         # print(mu)
         # Compute sigma for p(zs | zt).
         sigma = sigma_t_given_s * sigma_s / sigma_t

@@ -162,8 +162,7 @@ class EGNN_Lorentz_dynamics_QM9(nn.Module):
             in_node_nf=in_node_nf + context_node_nf, in_edge_nf=1,
             hidden_nf=hidden_nf, device=device, act_fn=act_fn,
             n_layers=n_layers, attention=attention, tanh=tanh, norm_constant=norm_constant,
-            inv_sublayers=inv_sublayers, sin_embedding=sin_embedding,
-            normalization_factor=normalization_factor,
+            inv_sublayers=inv_sublayers,normalization_factor=normalization_factor,
             aggregation_method=aggregation_method, hyp=hyp)
         self.in_node_nf = in_node_nf
 
@@ -219,8 +218,8 @@ class EGNN_Lorentz_dynamics_QM9(nn.Module):
         if self.mode == 'egnn_dynamics':
 
             h_final, x_final = self.egnn(h, x, edges, node_mask=node_mask, edge_mask=edge_mask,t=h_time)
-            vel = (x_final - x) * node_mask  # This masking operation is redundant but just in case
-            # vel = x_final
+            # vel = (x_final - x) * node_mask  # This masking operation is redundant but just in case
+            vel = x_final
         elif self.mode == 'gnn_dynamics':
             xh = torch.cat([x, h], dim=1)
             output = self.gnn(xh, edges, node_mask=node_mask)
@@ -238,9 +237,7 @@ class EGNN_Lorentz_dynamics_QM9(nn.Module):
             # Slice off last dimension which represented time.
             h_final = h_final[:, :-1]
 
-
         vel = vel.view(bs, n_nodes, -1)
-
         if torch.any(torch.isnan(vel)):
             print('Warning: detected nan, resetting EGNN output to zero.')
             vel = torch.where(torch.isnan(vel), torch.full_like(vel, 0), vel)

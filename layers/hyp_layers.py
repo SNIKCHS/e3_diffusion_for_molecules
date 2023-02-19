@@ -74,11 +74,6 @@ class HGCLayer(nn.Module):
         self.normalization_factor = 100
         self.aggregation_method = 'sum'
         self.att = DenseAtt(out_features,dropout=dropout, edge_dim=edge_dim)
-        # self.node_mlp = nn.Sequential(
-        #     nn.Linear(out_features, out_features),
-        #     nn.LayerNorm(out_features),
-        #     nn.SiLU(),
-        #     nn.Linear(out_features, out_features))
 
         self.act = act
         if self.manifold_in.name == 'Lorentz':
@@ -122,7 +117,6 @@ class HGCLayer(nn.Module):
         x = self.linear(x)
         x = self.proj_tan0(x)
         x = self.manifold_in.expmap0(x)
-
         bias = self.proj_tan0(self.bias.view(1, -1))
         bias = self.manifold_in.transp0(x, bias)
         res = self.manifold_in.expmap(x, bias)
@@ -162,6 +156,7 @@ class HGCLayer(nn.Module):
         h = self.manifold_in.logmap0(x)
         if self.manifold_in.name == 'Lorentz':
             h[..., 1:] = self.ln(h[..., 1:].clone())
+            h = self.proj_tan0(h)
         else:
             h = self.ln(h)
         h = self.manifold_in.expmap0(h)
