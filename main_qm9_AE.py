@@ -1,9 +1,7 @@
 # Rdkit import should be first, do not move it
 import os
 import random
-
 import numpy as np
-
 from AutoEncoder.AutoEncoder import HyperbolicAE
 
 try:
@@ -23,7 +21,7 @@ from equivariant_diffusion import utils as flow_utils
 import torch
 import time
 import pickle
-from timm import scheduler
+# from timm import scheduler
 from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch, test_HyperbolicDiffusion
 
@@ -36,8 +34,8 @@ parser.add_argument('--model', type=str, default='egnn_dynamics',
 parser.add_argument('--probabilistic_model', type=str, default='hyperbolic_diffusion',
                     help='diffusion')
 parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
-parser.add_argument('--cuda', type=str, default='cuda:0')
+parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
+parser.add_argument('--cuda', type=str, default='cuda:4')
 
 # Training complexity is O(1) (unaffected), but sampling complexity is O(steps).
 parser.add_argument('--diffusion_steps', type=int, default=1000)
@@ -229,10 +227,11 @@ Decoder = AutoEncoder.decoder
 model, nodes_dist, prop_dist = get_model(args, device, dataset_info, dataloaders['train'],encoder=Encoder,decoder=Decoder)  # model=EnVariationalDiffusion 包含EGNN_dynamics_QM9
 tot_params = sum([np.prod(p.size()) for p in model.parameters()])
 print(f"Total number of parameters: {tot_params}")
-# 1580999.0 128
+# 1580999.0 HGDM_GCN_6_128 128
 # 5578055.0 256
-#  817481.0 u 7
-# 1433839.0 u 16
+# 1585671.0 HGDM_GCN_6_128_UNet 16
+# 1149695.0 HGDM_HGCN_6_128_UNet 16
+# 1434575.0 HGDM_HGCN_6_128_UNet
 # exit(0)
 
 if prop_dist is not None:
@@ -247,7 +246,7 @@ optim = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr, amsgrad=True,
         weight_decay=1e-12)
-# lr_schedule = scheduler.CosineLRScheduler(optim,t_initial=args.n_epochs,lr_min=args.lr,warmup_t=4,warmup_lr_init=2e-5)
+# lr_schedule = scheduler.CosineLRScheduler(optim,t_initial=args.n_epochs,lr_min=args.lr,warmup_t=2,warmup_lr_init=1e-6)
 gradnorm_queue = utils.Queue()
 gradnorm_queue.add(3000)  # Add large value that will be flushed.
 

@@ -43,7 +43,6 @@ class HGCLayer(nn.Module):
         self.out_features = out_features
         self.manifold_in = manifold_in
         self.manifold_out = manifold_out
-        self.bias = nn.Parameter(torch.Tensor(1, out_features))
         # self.mlp = nn.Sequential(
         #     nn.Linear(in_features, in_features),
         #     act,
@@ -83,8 +82,6 @@ class HGCLayer(nn.Module):
     def forward(self, input):
         x, edge_attr, edges, node_mask, edge_mask = input
         x = self.manifold_in.logmap0(x)
-        # x = self.mlp(x)
-        # x = self.proj_tan0(x)
         x = self.linear(x)
         x = self.proj_tan0(x)
         x = self.manifold_in.expmap0(x)
@@ -92,7 +89,7 @@ class HGCLayer(nn.Module):
         bias = self.manifold_in.transp0(x, bias)
         x = self.manifold_in.expmap(x, bias)
 
-        # x = self.manifold_in.expmap0(x)
+
         x_tan = self.manifold_in.logmap0(x)
         row, col = edges  # 0,0,0...0,1 0,1,2..,0
         x_tangent_row = x_tan[row]
@@ -109,7 +106,7 @@ class HGCLayer(nn.Module):
                                    aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,dim)->(b*n_nodes,dim)
         support_t = self.proj_tan0(out)
         support_t = self.manifold_in.transp0(x,support_t)
-        x = self.manifold_in.expmap(x, support_t)
+        x = self.manifold_in.expmap(x, support_t)  # 类似于残差连接 x+support_t
         x = self.manifold_in.logmap0(x)
         x[..., 1:] = self.ln(x[..., 1:].clone())
         x = self.act(x)

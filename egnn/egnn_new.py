@@ -2,7 +2,7 @@ import geoopt
 import numpy as np
 
 from layers.att_layers import DenseAtt
-from manifold.Lorentz import Lorentz
+from layers.layers import GCLayer
 from torch import nn
 import torch
 import math
@@ -410,17 +410,19 @@ class EquivariantBlock(nn.Module):
                 #                 )
 
         else:
+            # for i in range(0, n_layers):
+            #     self.add_module("gcl_%d" % i, GCL(self.hidden_nf, self.hidden_nf, self.hidden_nf, edges_in_d=edge_feat_nf,
+            #                                       act_fn=act_fn, attention=attention,
+            #                                       normalization_factor=self.normalization_factor,
+            #                                       aggregation_method=self.aggregation_method))
             for i in range(0, n_layers):
-                self.add_module("gcl_%d" % i, GCL(self.hidden_nf, self.hidden_nf, self.hidden_nf, edges_in_d=edge_feat_nf,
-                                                  act_fn=act_fn, attention=attention,
-                                                  normalization_factor=self.normalization_factor,
-                                                  aggregation_method=self.aggregation_method))
+                self.add_module("gcl_%d" % i, GCLayer(self.hidden_nf, self.hidden_nf,0,act_fn, edge_dim=edge_feat_nf))
         self.add_module("gcl_equiv", EquivariantUpdate(hidden_nf, edges_in_d=edge_feat_nf, act_fn=nn.SiLU(), tanh=tanh,
                                                        coords_range=self.coords_range_layer,
                                                        normalization_factor=self.normalization_factor,
                                                        aggregation_method=self.aggregation_method))
         # self.to(self.device)
-        self.apply(weight_init)
+
 
     def forward(self, h, x, edge_index, node_mask=None, edge_mask=None, edge_attr=None):
         # edge_index:list[rol,col] (b*n_nodes*n_nodes,)
@@ -439,7 +441,8 @@ class EquivariantBlock(nn.Module):
                 h, edge_attr, _, _, _ = self._modules["gcl_%d" % i](input)
                 # h, edge_attr = self._modules["gcl_%d" % i](h, edge_index, edge_attr=edge_attr, node_mask=node_mask, edge_mask=edge_mask)
             else:
-                h, _ = self._modules["gcl_%d" % i](h, edge_index, edge_attr=edge_attr, node_mask=node_mask, edge_mask=edge_mask)
+                # h, _ = self._modules["gcl_%d" % i](h, edge_index, edge_attr=edge_attr, node_mask=node_mask, edge_mask=edge_mask)
+                h, _, _, _, _ = self._modules["gcl_%d" % i](input)
           # (b*n_node*n_node,1)
         if self.hyp:
             h_t = self.manifold.logmap0(h)
@@ -449,6 +452,7 @@ class EquivariantBlock(nn.Module):
         return h, x
 
 def weight_init(m):
+    # print(m)
     if isinstance(m, nn.Linear):
         nn.init.xavier_uniform_(m.weight,gain=0.1)
         if m.bias is not None:
@@ -456,7 +460,7 @@ def weight_init(m):
 class EGNN(nn.Module):
     def __init__(self, in_node_nf, in_edge_nf, hidden_nf, device='cpu', act_fn=nn.SiLU(), n_layers=3, attention=False,
                  norm_diff=True, out_node_nf=None, tanh=False, coords_range=15, norm_constant=1, inv_sublayers=2,
-                 sin_embedding=False, normalization_factor=100, aggregation_method='sum',hyp=False,):
+                 sin_embedding=False, normalization_factor=100, aggregation_method='sum',hyp=False):
         super(EGNN, self).__init__()
         if out_node_nf is None:
             out_node_nf = in_node_nf
@@ -513,8 +517,7 @@ class EGNN(nn.Module):
                                                                    sin_embedding=self.sin_embedding,
                                                                    normalization_factor=self.normalization_factor,
                                                                    aggregation_method=self.aggregation_method,hyp=hyp))
-
-
+        # self.apply(weight_init)
 
     def forward(self, h, x, edge_index, node_mask=None, edge_mask=None,t=None):
         # print(t.shape) (b,1)

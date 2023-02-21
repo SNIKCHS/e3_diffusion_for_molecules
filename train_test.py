@@ -156,7 +156,7 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
         if i % args.n_report_steps == 0:
             print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
                   f"Loss {loss.item():.4f}, "
-                  f"error_x: {error_x.item():.6f},error_t: {error_t.item():.6f}"
+                  f"error_x: {error_x.item():.6f},error_t: {error_t.item():.6f} "
                   f"GradNorm: {grad_norm:.1f}, abs_z: {mean_abs_z.item():.6f} "
                   f"time:{time.time() - start:.4f}")
 

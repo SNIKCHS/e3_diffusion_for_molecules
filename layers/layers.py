@@ -108,20 +108,20 @@ class GCLayer(nn.Module):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.mlp = nn.Sequential(
-            nn.Linear(in_features, in_features),
+        self.linear = nn.Linear(in_features, out_features)
+        self.node_mlp = nn.Sequential(
+            nn.Linear(2 * out_features, out_features),
             act,
-            nn.Linear(in_features, out_features),
-            act,
-            nn.Linear(out_features, out_features),
-        )
-        self.normalization_factor = 100
+            nn.Linear(out_features, out_features))
+        self.normalization_factor = 1
         self.aggregation_method = 'sum'
         self.att = DenseAtt(out_features,dropout=dropout, edge_dim=edge_dim)
         self.edge_mlp = nn.Sequential(
             nn.Linear(2*out_features + edge_dim, out_features),
             act,
-            nn.Linear(out_features, out_features))
+            nn.Linear(out_features, out_features),
+            act
+        )
 
         self.ln = nn.LayerNorm(out_features)
 
@@ -129,7 +129,7 @@ class GCLayer(nn.Module):
         h, edge_attr, edges, node_mask, edge_mask = input
         # if torch.any(torch.isnan(h)):
         #     print('HypLinear nan')
-        h = self.mlp(h)
+        h = self.linear(h)
         h = self.Agg(h, edge_attr, edges, node_mask, edge_mask)
         # if torch.any(torch.isnan(h)):
         #     print('HypAgg nan')
@@ -143,10 +143,13 @@ class GCLayer(nn.Module):
 
         att = self.att(x[row], x[col], edge_attr, edge_mask)  # (b*n_node*n_node,dim)
         agg = self.edge_mlp(torch.concat([x[row], x[col], edge_attr],dim=-1)) * att
-        out = unsorted_segment_sum(agg, row, num_segments=x.size(0),  # num_segments=b*n_nodes
+        agg = unsorted_segment_sum(agg, row, num_segments=x.size(0),  # num_segments=b*n_nodes
                                    normalization_factor=self.normalization_factor,
                                    aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,dim)->(b*n_nodes,dim)
-        return x+out
+
+        agg = torch.cat([x, agg], dim=1)
+        out = x + self.node_mlp(agg)
+        return out
 
 class Linear(Module):
     """
