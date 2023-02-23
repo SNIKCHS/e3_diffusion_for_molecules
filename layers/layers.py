@@ -112,10 +112,14 @@ class GCLayer(nn.Module):
         self.node_mlp = nn.Sequential(
             nn.Linear(2 * out_features, out_features),
             act,
-            nn.Linear(out_features, out_features))
+            nn.Linear(out_features, out_features)
+        )
         self.normalization_factor = 1
         self.aggregation_method = 'sum'
         self.att = DenseAtt(out_features,dropout=dropout, edge_dim=edge_dim)
+        # self.att_mlp = nn.Sequential(
+        #     nn.Linear(out_features, 1),
+        #     nn.Sigmoid())
         self.edge_mlp = nn.Sequential(
             nn.Linear(2*out_features + edge_dim, out_features),
             act,
@@ -127,13 +131,10 @@ class GCLayer(nn.Module):
 
     def forward(self, input):
         h, edge_attr, edges, node_mask, edge_mask = input
-        # if torch.any(torch.isnan(h)):
-        #     print('HypLinear nan')
         h = self.linear(h)
         h = self.Agg(h, edge_attr, edges, node_mask, edge_mask)
-        # if torch.any(torch.isnan(h)):
-        #     print('HypAgg nan')
-        h = self.ln(h)
+        h = h * node_mask
+        # h = self.ln(h)
         output = (h, edge_attr, edges, node_mask, edge_mask)
         return output
 
@@ -143,6 +144,7 @@ class GCLayer(nn.Module):
 
         att = self.att(x[row], x[col], edge_attr, edge_mask)  # (b*n_node*n_node,dim)
         agg = self.edge_mlp(torch.concat([x[row], x[col], edge_attr],dim=-1)) * att
+
         agg = unsorted_segment_sum(agg, row, num_segments=x.size(0),  # num_segments=b*n_nodes
                                    normalization_factor=self.normalization_factor,
                                    aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,dim)->(b*n_nodes,dim)

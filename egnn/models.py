@@ -164,9 +164,8 @@ class EGNN_Lorentz_dynamics_QM9(nn.Module):
             n_layers=n_layers, attention=attention, tanh=tanh, norm_constant=norm_constant,
             inv_sublayers=inv_sublayers,normalization_factor=normalization_factor,
             aggregation_method=aggregation_method, hyp=hyp)
+
         self.in_node_nf = in_node_nf
-
-
         self.context_node_nf = context_node_nf
         self.device = device
         self.n_dims = n_dims

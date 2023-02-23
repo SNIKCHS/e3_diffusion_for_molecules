@@ -9,8 +9,6 @@ import math
 
 from torch.nn import init
 
-from layers.hyp_layers import HGCLayer
-
 class HypLinear(nn.Module):
     """
     Hyperbolic linear layer.
@@ -47,25 +45,24 @@ class HypLinear(nn.Module):
         res = self.manifold.expmap(x, bias)
 
         return res
-class HGCL(nn.Module):
+class HGCLayer(nn.Module):
     def __init__(self, in_features, out_features, manifold_in, manifold_out, dropout, act,edge_dim=2):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.manifold_in = manifold_in
         self.manifold_out = manifold_out
-        self.bias = nn.Parameter(torch.Tensor(1, out_features))
         self.linear = nn.Linear(in_features, out_features, bias=False)
-
+        self.bias = nn.Parameter(torch.Tensor(1, out_features))
+        self.edge_mlp = nn.Sequential(
+            nn.Linear(out_features + edge_dim, out_features),
+            act,
+            nn.Linear(out_features, out_features),
+        )
+        self.dropout = nn.Dropout(dropout)
         self.normalization_factor = 1
         self.aggregation_method = 'sum'
         self.att = DenseAtt(out_features,dropout=dropout, edge_dim=edge_dim)
-        # self.node_mlp = nn.Sequential(
-        #     nn.Linear(out_features, out_features),
-        #     nn.LayerNorm(out_features),
-        #     nn.SiLU(),
-        #     nn.Linear(out_features, out_features))
-
         self.act = act
         if self.manifold_in.name == 'Lorentz':
             self.ln = nn.LayerNorm(out_features - 1)
@@ -86,73 +83,42 @@ class HGCL(nn.Module):
         init.constant_(self.bias, 0)
 
     def forward(self, input):
-        h, edge_attr, edges, node_mask, edge_mask = input
-
-        h = self.HypLinear(h)
-        # print('HypLinear',h)
-        # if torch.any(torch.isnan(h)):
-        #     print('HypLinear nan')
-        h,edge_attr = self.HypAgg(h, edge_attr, edges, node_mask, edge_mask)
-        # print('HypAgg', h)
-        # if torch.any(torch.isnan(h)):
-        #     print('HypAgg nan')
-        h = self.HNorm(h)
-        # print('HNorm', h)
-        # if torch.any(torch.isnan(h)):
-        #     print('HNorm nan')
-        h = self.HypAct(h)
-        # print('HypAct', h)
-        # if torch.any(torch.isnan(h)):
-        #     print('HypAct nan')
-        output = (h, edge_attr, edges, node_mask, edge_mask)
-        return output
-
-    def HypLinear(self, x):
+        x, edge_attr, edges, node_mask, edge_mask = input
         x = self.manifold_in.logmap0(x)
         x = self.linear(x)
         x = self.proj_tan0(x)
         x = self.manifold_in.expmap0(x)
         bias = self.proj_tan0(self.bias.view(1, -1))
         bias = self.manifold_in.transp0(x, bias)
-        res = self.manifold_in.expmap(x, bias)
-        return res
+        x = self.manifold_in.expmap(x, bias)
 
-    def HypAgg(self, x, edge_attr, edges, node_mask, edge_mask):
-        x_tangent = self.manifold_in.logmap0(x)  # (b*n_node,dim)
 
+        x_tan = self.manifold_in.logmap0(x)
         row, col = edges  # 0,0,0...0,1 0,1,2..,0
-        x_tangent_row = x_tangent[row]
-        x_tangent_col = x_tangent[col]
+        x_tangent_row = x_tan[row]
+        x_tangent_col = x_tan[col]
 
-        # geodesic = self.manifold_in.dist(x[row], x[col],keepdim=True)  # (b*n_node*n_node,dim)
-        # edge_attr = torch.cat([edge_attr,geodesic],dim=-1)
+        geodesic = self.manifold_in.dist(x[row], x[col], keepdim=True)  # (b*n_node*n_node,dim)
+        edge_attr = torch.cat([edge_attr, geodesic], dim=-1)
         att = self.att(x_tangent_row, x_tangent_col, edge_attr, edge_mask)  # (b*n_node*n_node,dim)
         x_local_tangent = self.manifold_in.logmap(x[row], x[col])  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
-        agg = x_local_tangent * att
-        out = unsorted_segment_sum(agg, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
+        x_local_tangent = self.manifold_in.transp0back(x[row],x_local_tangent)
+        agg = self.edge_mlp(torch.cat([x_local_tangent,edge_attr],-1)) * att
+        out = unsorted_segment_sum(agg, row, num_segments=x.size(0),  # num_segments=b*n_nodes
                                    normalization_factor=self.normalization_factor,
                                    aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,dim)->(b*n_nodes,dim)
+        support_t = self.proj_tan0(out)
+        support_t = self.manifold_in.transp0(x,support_t)
+        x = self.manifold_in.expmap(x, support_t)  # 类似于残差连接 x+support_t
+        x = self.manifold_in.logmap0(x)
+        x[..., 1:] = self.ln(x[..., 1:].clone())
+        x = self.act(x)
+        x = self.proj_tan0(x)
+        x = self.manifold_out.expmap0(x)
 
-        # out = self.node_mlp(out)
-        support_t = self.manifold_in.proju(x, out)
-        output = self.manifold_in.expmap(x, support_t)
-        # print('output:', torch.max(output.view(-1)), torch.min(output.view(-1)))
-        return output,edge_attr
+        output = (x, edge_attr, edges, node_mask, edge_mask)
+        return output
 
-    def HypAct(self, x):
-        xt = self.act(self.manifold_in.logmap0(x))
-        xt = self.proj_tan0(xt)
-        out = self.manifold_out.expmap0(xt)
-        return out
-
-    def HNorm(self, x):
-        h = self.manifold_in.logmap0(x)
-        if self.manifold_in.name == 'Lorentz':
-            h[..., 1:] = self.ln(h[..., 1:].clone())
-        else:
-            h = self.ln(h)
-        h = self.manifold_in.expmap0(h)
-        return h
 # class HGCL(nn.Module):
 #     def __init__(self, input_nf, output_nf, hidden_nf,manifold_in, manifold_out, normalization_factor, aggregation_method,
 #                  edges_in_d=0, act_fn=nn.SiLU()):
@@ -398,7 +364,7 @@ class EquivariantBlock(nn.Module):
 
             for i in range(0, n_layers):
                 self.add_module("gcl_%d" % i,
-                                HGCL(
+                                HGCLayer(
                                     dims[i], dims[i+1], manifold_in, manifold_out,0,
                                     act=act_fn,edge_dim=edge_feat_nf)
                                 )
@@ -410,11 +376,11 @@ class EquivariantBlock(nn.Module):
                 #                 )
 
         else:
-            # for i in range(0, n_layers):
-            #     self.add_module("gcl_%d" % i, GCL(self.hidden_nf, self.hidden_nf, self.hidden_nf, edges_in_d=edge_feat_nf,
-            #                                       act_fn=act_fn, attention=attention,
-            #                                       normalization_factor=self.normalization_factor,
-            #                                       aggregation_method=self.aggregation_method))
+            for i in range(0, n_layers):
+                self.add_module("gcl_%d" % i, GCL(self.hidden_nf, self.hidden_nf, self.hidden_nf, edges_in_d=edge_feat_nf,
+                                                  act_fn=act_fn, attention=attention,
+                                                  normalization_factor=self.normalization_factor,
+                                                  aggregation_method=self.aggregation_method))
             for i in range(0, n_layers):
                 self.add_module("gcl_%d" % i, GCLayer(self.hidden_nf, self.hidden_nf,0,act_fn, edge_dim=edge_feat_nf))
         self.add_module("gcl_equiv", EquivariantUpdate(hidden_nf, edges_in_d=edge_feat_nf, act_fn=nn.SiLU(), tanh=tanh,
@@ -481,7 +447,7 @@ class EGNN(nn.Module):
             edge_feat_nf = 2
 
         if hyp:
-            edge_feat_nf = 2
+            edge_feat_nf = 3
             self.manifolds = [geoopt.Lorentz(1,learnable=True) for _ in range(n_layers+1)]
             self.embedding = HypLinear(in_node_nf, self.hidden_nf,self.manifolds[0])
             # self.embedding_out = HypLinear(self.hidden_nf, out_node_nf,self.manifolds[-1])
@@ -517,7 +483,8 @@ class EGNN(nn.Module):
                                                                    sin_embedding=self.sin_embedding,
                                                                    normalization_factor=self.normalization_factor,
                                                                    aggregation_method=self.aggregation_method,hyp=hyp))
-        # self.apply(weight_init)
+        if hyp:
+            self.apply(weight_init)
 
     def forward(self, h, x, edge_index, node_mask=None, edge_mask=None,t=None):
         # print(t.shape) (b,1)
