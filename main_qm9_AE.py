@@ -26,7 +26,7 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch, test_HyperbolicDiffusion
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='HGDM_HGCN_6_128_UNet_modif_fix_new')
+parser.add_argument('--exp_name', type=str, default='HGDM_HGCN_6_128_UNet')
 # parser.add_argument('--exp_name', type=str, default='HGDM_GCN_6_128_noln')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
@@ -35,7 +35,7 @@ parser.add_argument('--probabilistic_model', type=str, default='hyperbolic_diffu
                     help='diffusion')
 parser.add_argument('--wandb_usr', type=str,default='elma')
 parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
-parser.add_argument('--cuda', type=str, default='cuda:0')
+parser.add_argument('--cuda', type=str, default='cuda:4')
 
 # Training complexity is O(1) (unaffected), but sampling complexity is O(steps).
 parser.add_argument('--diffusion_steps', type=int, default=1000)
@@ -64,7 +64,7 @@ parser.add_argument('--clip_grad', type=eval, default=True,
 parser.add_argument('--trace', type=str, default='hutch',
                     help='hutch | exact')
 # EGNN args -->
-parser.add_argument('--hyp', type=eval, default=True,
+parser.add_argument('--hyp', type=eval, default=False,
                     help='use hyperbolic gcl')
 parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
@@ -310,6 +310,7 @@ def main():
     # exit(0)
     for epoch in range(args.start_epoch, args.n_epochs):
         start_epoch = time.time()
+        print('lr: ',optim.param_groups[0]["lr"])
         train_HyperbolicDiffusion_epoch(args=args, loader=dataloaders['train'], epoch=epoch, model=model, model_dp=model_dp,
                     model_ema=model_ema, ema=ema, device=device, dtype=dtype, property_norms=property_norms,
                     nodes_dist=nodes_dist, dataset_info=dataset_info,

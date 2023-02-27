@@ -129,7 +129,13 @@ class Lorentz:
         y = y.to(torch.float64)
         u = u.to(torch.float64)
         return math.parallel_transport0(y, u, k=self.k, dim=dim).to(torch.get_default_dtype())
-
+    def transp(
+        self, x: torch.Tensor, y: torch.Tensor, v: torch.Tensor, *, dim=-1
+    ) -> torch.Tensor:
+        x = x.to(torch.float64)
+        y = y.to(torch.float64)
+        v = v.to(torch.float64)
+        return math.parallel_transport(x, y, v, k=self.k, dim=dim).to(torch.get_default_dtype())
     def origin(
             self, *size, dtype=None, device=None, seed=42
     ) -> "geoopt.ManifoldTensor":
@@ -161,7 +167,16 @@ class Lorentz:
         zero_point[..., 0] = torch.sqrt(self.k).squeeze()
         return geoopt.ManifoldTensor(zero_point, manifold=self)
 
-    retr = expmap
+    def transp0back(self, x: torch.Tensor, u: torch.Tensor, *, dim=-1) -> torch.Tensor:
+        x = x.to(torch.float64)
+        return math.parallel_transport0back(x, u, k=self.k, dim=dim).to(torch.get_default_dtype())
     def to_poincare(self,x, dim=-1):
         x = x.to(torch.float64)
         return math.lorentz_to_poincare(x,k=self.k, dim=dim).to(torch.get_default_dtype())
+
+    def to_lorentz(self, x):
+        x = x.to(torch.float64)
+        K=self.k
+        sqrtK = K ** 0.5
+        sqnorm = torch.norm(x, p=2, dim=1, keepdim=True) ** 2
+        return sqrtK * torch.cat([K + sqnorm, 2 * sqrtK * x], dim=1) / (K - sqnorm).to(torch.get_default_dtype())

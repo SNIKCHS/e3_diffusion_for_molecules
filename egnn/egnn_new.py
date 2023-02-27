@@ -381,8 +381,8 @@ class EquivariantBlock(nn.Module):
                                                   act_fn=act_fn, attention=attention,
                                                   normalization_factor=self.normalization_factor,
                                                   aggregation_method=self.aggregation_method))
-            for i in range(0, n_layers):
-                self.add_module("gcl_%d" % i, GCLayer(self.hidden_nf, self.hidden_nf,0,act_fn, edge_dim=edge_feat_nf))
+            # for i in range(0, n_layers):
+            #     self.add_module("gcl_%d" % i, GCLayer(self.hidden_nf, self.hidden_nf,0,act_fn, edge_dim=edge_feat_nf))
         self.add_module("gcl_equiv", EquivariantUpdate(hidden_nf, edges_in_d=edge_feat_nf, act_fn=nn.SiLU(), tanh=tanh,
                                                        coords_range=self.coords_range_layer,
                                                        normalization_factor=self.normalization_factor,
@@ -407,8 +407,8 @@ class EquivariantBlock(nn.Module):
                 h, edge_attr, _, _, _ = self._modules["gcl_%d" % i](input)
                 # h, edge_attr = self._modules["gcl_%d" % i](h, edge_index, edge_attr=edge_attr, node_mask=node_mask, edge_mask=edge_mask)
             else:
-                # h, _ = self._modules["gcl_%d" % i](h, edge_index, edge_attr=edge_attr, node_mask=node_mask, edge_mask=edge_mask)
-                h, _, _, _, _ = self._modules["gcl_%d" % i](input)
+                h, _ = self._modules["gcl_%d" % i](h, edge_index, edge_attr=edge_attr, node_mask=node_mask, edge_mask=edge_mask)
+                # h, _, _, _, _ = self._modules["gcl_%d" % i](input)
           # (b*n_node*n_node,1)
         if self.hyp:
             h_t = self.manifold.logmap0(h)
@@ -514,9 +514,9 @@ class EGNN(nn.Module):
         # Important, the bias of the last linear might be non-zero
         if self.hyp:
             h = self.manifolds[-1].logmap0(h)
-            h = self.proj_tan0(h)
-        h = self.embedding_out(h)
 
+        h = self.embedding_out(h)
+        h = self.proj_tan0(h)
         # print('hout:', h, h[:3])
         if node_mask is not None:
             h = h * node_mask

@@ -456,18 +456,16 @@ class EnVariationalDiffusion(torch.nn.Module):
         """Computes error, i.e. the most likely prediction of x."""
         eps_t = net_out
         if self.training and self.loss_type == 'l2':
-            denom = (self.n_dims + self.in_node_nf) * eps_t.shape[1]
-            error = sum_except_batch((eps - eps_t) ** 2) / denom
-            # x_norm = self.n_dims * eps_t.shape[1]  # 3 * n_nodes
-            # t_norm = self.in_node_nf * eps_t.shape[1]  # 20 * n_nodes
-            # error_x = sum_except_batch((eps[..., :3] - eps_t[..., :3]) ** 2) / x_norm
-            # error_t = sum_except_batch((eps[..., 3:] - eps_t[..., 3:]) ** 2) / t_norm
-            # error = error_x+error_t
-            # print('x_err:', error_x.sum() / error.sum(), ' feat_err:', error_t.sum() / error.sum())
+            x_norm = self.n_dims * eps_t.shape[1]  # 3 * n_nodes
+            t_norm = self.in_node_nf * eps_t.shape[1]  # 20 * n_nodes
+            error_x = sum_except_batch((eps[..., :3] - eps_t[..., :3]) ** 2) / x_norm
+            error_t = sum_except_batch((eps[..., 3:] - eps_t[..., 3:]) ** 2) / t_norm
+            error = error_x + error_t
+            # print('x_err:',error_x.sum()/error.sum(),' feat_err:',error_t.sum()/error.sum())
+            return error, error_x.squeeze().mean(), error_t.squeeze().mean()
         else:
             error = sum_except_batch((eps - eps_t) ** 2)
-
-        return error
+            return error, None, None
 
     def log_constants_p_x_given_z0(self, x, node_mask):
         """Computes p(x|z0)."""
@@ -636,9 +634,7 @@ class EnVariationalDiffusion(torch.nn.Module):
 
         # Neural net prediction. 拟合噪声
         net_out = self.phi(z_t, t, node_mask, edge_mask, context)
-        print('t:', t[0, 0])
-        print('eps:', eps[0, 0])
-        print('net_out:', net_out[0, 0])
+
         # Compute the error.
         error = self.compute_error(net_out, gamma_t, eps)
 
@@ -895,8 +891,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         super().__init__(dynamics, in_node_nf, n_dims, timesteps, parametrization, noise_schedule,
                          noise_precision, loss_type, norm_values, norm_biases, include_charges, num_classes)
         self.Encoder = Encoder
-        # self.manifold = self.Encoder.manifolds[-1]
-        # self.manifold = geoopt.PoincareBall()
+        self.manifold = self.dynamics.egnn.manifolds[0]
         self.Decoder = Decoder
         self._edges_dict = {}
         self.device = device

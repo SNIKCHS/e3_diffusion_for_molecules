@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from egnn.egnn_new import EGNN, GNN
 from egnn.graph_unet import UNet
+from egnn.mixCurvature import MCNet
 from equivariant_diffusion.utils import remove_mean, remove_mean_with_mask
 import numpy as np
 
@@ -164,6 +165,12 @@ class EGNN_Lorentz_dynamics_QM9(nn.Module):
             n_layers=n_layers, attention=attention, tanh=tanh, norm_constant=norm_constant,
             inv_sublayers=inv_sublayers,normalization_factor=normalization_factor,
             aggregation_method=aggregation_method, hyp=hyp)
+        # self.egnn = MCNet(
+        #     in_node_nf=in_node_nf + context_node_nf, in_edge_nf=1,
+        #     hidden_nf=hidden_nf, device=device, act_fn=act_fn,
+        #     n_layers=n_layers, attention=attention, tanh=tanh, norm_constant=norm_constant,
+        #     inv_sublayers=inv_sublayers, normalization_factor=normalization_factor,
+        #     aggregation_method=aggregation_method, hyp=hyp)
 
         self.in_node_nf = in_node_nf
         self.context_node_nf = context_node_nf

@@ -130,10 +130,8 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
         # standard nll from forward KL
         loss = nll + args.ode_regularization * reg_term
         if torch.isnan(loss):
-            # with torch.no_grad():
-            #     t = torch.arange(0, 1, 0.1).unsqueeze(-1).to(device, dtype)
-            #     c = model.dynamics.egnn.curvature_net(t)
-            #     print(c)
+            for m in model.dynamics.egnn.manifolds:
+                print(m.k.item())
             utils.save_model(model, 'outputs/%s/error_model.npy' % args.exp_name)
             raise AssertionError
         loss.backward()
@@ -171,6 +169,7 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
     if args.hyp:
         for m in model.dynamics.egnn.manifolds:
             print(m.k.item())
+
     if epoch % args.visualize_epoch == 0 and epoch!=0:
         start = time.time()
         if len(args.conditioning) > 0:

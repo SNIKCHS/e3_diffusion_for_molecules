@@ -117,9 +117,6 @@ class GCLayer(nn.Module):
         self.normalization_factor = 1
         self.aggregation_method = 'sum'
         self.att = DenseAtt(out_features,dropout=dropout, edge_dim=edge_dim)
-        # self.att_mlp = nn.Sequential(
-        #     nn.Linear(out_features, 1),
-        #     nn.Sigmoid())
         self.edge_mlp = nn.Sequential(
             nn.Linear(2*out_features + edge_dim, out_features),
             act,
@@ -127,14 +124,12 @@ class GCLayer(nn.Module):
             act
         )
 
-        self.ln = nn.LayerNorm(out_features)
 
     def forward(self, input):
         h, edge_attr, edges, node_mask, edge_mask = input
         h = self.linear(h)
         h = self.Agg(h, edge_attr, edges, node_mask, edge_mask)
         h = h * node_mask
-        # h = self.ln(h)
         output = (h, edge_attr, edges, node_mask, edge_mask)
         return output
 
