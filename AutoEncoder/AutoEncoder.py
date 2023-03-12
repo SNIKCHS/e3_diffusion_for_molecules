@@ -3,7 +3,6 @@ import AutoEncoder.Decoders as Decoders
 import AutoEncoder.Encoders as Encoders
 from torch import nn
 
-
 def weight_init(m):
     if isinstance(m, nn.Linear):
         nn.init.xavier_uniform_(m.weight,gain=0.5)

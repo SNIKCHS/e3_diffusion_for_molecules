@@ -16,7 +16,7 @@ class Decoder(nn.Module):
         self.args = args
         self.out = nn.Sequential(
             nn.Linear(args.hidden_dim,args.max_z),
-            # nn.Sigmoid()
+            # nn.Sigmoid()     # CrossEntropyLoss 内置了Softmax
         )
         self.pred_edge = args.pred_edge
 

@@ -23,10 +23,11 @@ import time
 import pickle
 # from timm import scheduler
 from qm9.utils import prepare_context, compute_mean_mad
-from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch, test_HyperbolicDiffusion
+from train_test import train_epoch, test, analyze_and_save, train_HyperbolicDiffusion_epoch, test_HyperbolicDiffusion, \
+    train_HGDM_epoch, test_HGDM
 
-parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='HGDM_HGCN_6_128_UNet_centroid')
+parser = argparse.ArgumentParser(description='HyperbolicDiffusion')
+parser.add_argument('--exp_name', type=str, default='HGDM_GCN_6_128_UNet_new')
 # parser.add_argument('--exp_name', type=str, default='HGDM_GCN_6_128_noln')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
@@ -34,11 +35,11 @@ parser.add_argument('--model', type=str, default='egnn_dynamics',
 parser.add_argument('--probabilistic_model', type=str, default='hyperbolic_diffusion',
                     help='diffusion')
 parser.add_argument('--wandb_usr', type=str,default='elma')
-parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
-parser.add_argument('--cuda', type=str, default='cuda:1')
+parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
+parser.add_argument('--cuda', type=str, default='cuda:2')
 
 # Training complexity is O(1) (unaffected), but sampling complexity is O(steps).
-parser.add_argument('--diffusion_steps', type=int, default=1000)
+parser.add_argument('--T', type=int, default=1000)
 parser.add_argument('--diffusion_noise_schedule', type=str, default='polynomial_2',
                     help='learned, cosine')
 parser.add_argument('--diffusion_noise_precision', type=float, default=2e-4,
@@ -49,10 +50,10 @@ parser.add_argument('--seed', type=int, default=1)
 parser.add_argument('--n_epochs', type=int, default=1000)
 parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--lr', type=float, default=2e-4)
-# parser.add_argument('--brute_force', type=eval, default=False,
-#                     help='True | False')
-# parser.add_argument('--actnorm', type=eval, default=True,
-#                     help='True | False')
+parser.add_argument('--brute_force', type=eval, default=False,
+                    help='True | False')
+parser.add_argument('--actnorm', type=eval, default=True,
+                    help='True | False')
 parser.add_argument('--break_train_epoch', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--dp', type=eval, default=False,
@@ -61,27 +62,17 @@ parser.add_argument('--condition_time', type=eval, default=True,
                     help='True | False')
 parser.add_argument('--clip_grad', type=eval, default=True,
                     help='True | False')
-# parser.add_argument('--trace', type=str, default='hutch',
-#                     help='hutch | exact')
+parser.add_argument('--trace', type=str, default='hutch',
+                    help='hutch | exact')
 # EGNN args -->
 parser.add_argument('--hyp', type=eval, default=True,
                     help='use hyperbolic gcl')
 parser.add_argument('--n_layers', type=int, default=9,
                     help='number of layers')
-parser.add_argument('--inv_sublayers', type=int, default=1,
-                    help='number of layers')
 parser.add_argument('--nf', type=int, default=128,
                     help='dim of EGNN hidden feature')
 parser.add_argument('--dim', type=int, default=6,
                     help='dim of encoder output')
-parser.add_argument('--tanh', type=eval, default=False,
-                    help='use tanh in the coord_mlp')
-parser.add_argument('--attention', type=eval, default=True,
-                    help='use attention in the EGNN')
-parser.add_argument('--norm_constant', type=float, default=1,
-                    help='diff/(|diff| + norm_constant)')
-parser.add_argument('--sin_embedding', type=eval, default=False,
-                    help='whether using or not the sin embedding')
 # <-- EGNN args
 parser.add_argument('--ode_regularization', type=float, default=1e-3)
 parser.add_argument('--dataset', type=str, default='qm9',
@@ -90,16 +81,16 @@ parser.add_argument('--datadir', type=str, default='qm9/temp',
                     help='qm9 directory')
 parser.add_argument('--filter_n_atoms', type=int, default=None,
                     help='When set to an integer value, QM9 will only contain molecules of that amount of atoms')
-# parser.add_argument('--dequantization', type=str, default='argmax_variational',
-#                     help='uniform | variational | argmax_variational | deterministic')
+parser.add_argument('--dequantization', type=str, default='argmax_variational',
+                    help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
 
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
 
 parser.add_argument('--save_model', type=eval, default=True,
                     help='save model')
-# parser.add_argument('--generate_epochs', type=int, default=1,
-#                     help='save model')
+parser.add_argument('--generate_epochs', type=int, default=1,
+                    help='save model')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of worker for the dataloader')
 parser.add_argument('--test_epochs', type=int, default=1)
 parser.add_argument('--data_augmentation', type=eval, default=True, help='')
@@ -121,6 +112,8 @@ parser.add_argument('--remove_h', action='store_true')
 parser.add_argument('--include_charges', type=eval, default=True,
                     help='include atom charge or not')
 parser.add_argument('--visualize_epoch', type=int, default=10,
+                    help="Can be used to visualize multiple times per epoch")
+parser.add_argument('--sample_epoch', type=int, default=100,
                     help="Can be used to visualize multiple times per epoch")
 parser.add_argument('--normalization_factor', type=float, default=1,
                     help="Normalize the sum aggregation of EGNN")
@@ -174,8 +167,6 @@ if args.resume is not None:
     print(args)
 
 utils.create_folders(args)
-# print(args)
-
 
 # Wandb config
 if args.no_wandb:
@@ -189,18 +180,7 @@ wandb.save('*.txt')
 
 # Retrieve QM9 dataloaders
 dataloaders, charge_scale = dataset.retrieve_dataloaders(args)
-
 data_dummy = next(iter(dataloaders['train']))
-# print(data_dummy['one_hot'].shape) # [128, 25, 5] 只有5种原子 H,C,O,N,F padding是全false
-# print(data_dummy['edge_mask']) (b*n_atom*n_atom,1) atom_mask.unsqueeze(1) * atom_mask.unsqueeze(2) i*i=0  defined in qm9/data/collate.py
-# print(data_dummy['atom_mask'].shape) (b,n_atom)
-# temp = (torch.argmax(data_dummy['one_hot'].int(),dim=2)+1)*data_dummy['atom_mask']
-# print(temp[:2])
-
-#dict_keys(['num_atoms', 'charges', 'positions', 'index', 'A', 'B', 'C', 'mu', 'alpha', 'homo', 'lumo',
-# 'gap', 'r2', 'zpve', 'U0', 'U', 'H', 'G', 'Cv', 'omega1', 'zpve_thermo', 'U0_thermo', 'U_thermo', 'H_thermo',
-# 'G_thermo', 'Cv_thermo', 'one_hot', 'atom_mask', 'edge_mask'])
-
 
 if len(args.conditioning) > 0:
     print(f'Conditioning on {args.conditioning}')
@@ -214,8 +194,8 @@ else:
 args.context_node_nf = context_node_nf
 
 
-AE_state_dict = torch.load('outputs/3_3_6_hgcn_wrap_b128_newdist/AE_ema_198.npy',map_location=device)
-with open('outputs/3_3_6_hgcn_wrap_b128_newdist/args_198.pickle', 'rb') as f:
+AE_state_dict = torch.load('outputs/3_3_6_hgcn_wrap_b128_px/AE_ema.npy',map_location=device)
+with open('outputs/3_3_6_hgcn_wrap_b128_px/args.pickle', 'rb') as f:
     AE_args = pickle.load(f)
 AE_args.dropout = 0
 AutoEncoder = HyperbolicAE(AE_args)
@@ -256,7 +236,6 @@ def check_mask_correct(variables, node_mask):
         if len(variable) > 0:
             assert_correctly_masked(variable, node_mask)
 
-
 def main():
     # if args.resume is not None:
     #     flow_state_dict = torch.load(join(args.resume, 'flow.npy'))
@@ -264,8 +243,8 @@ def main():
     #     model.load_state_dict(flow_state_dict)
     #     optim.load_state_dict(optim_state_dict)
     # args.start_epoch = 423
-    # flow_state_dict = torch.load('outputs/Diffusion_AE_HGCN_cwitht/generative_model.npy')
-    # optim_state_dict = torch.load('outputs/Diffusion_AE_HGCN_modif/optim.npy')
+    # flow_state_dict = torch.load('outputs/HGDM_HGCN_6_128_UNet_new/generative_model.npy')
+    # optim_state_dict = torch.load('outputs/HGDM_HGCN_6_128_UNet_new/optim.npy')
     # model.load_state_dict(flow_state_dict,False)
     # optim.load_state_dict(optim_state_dict)
 
@@ -304,32 +283,27 @@ def main():
     # vis.visualize_chain(f"outputs/{args.exp_name}/epoch_{epoch}_/chain/", dataset_info, wandb=wandb)
     #
     # exit(0)
-    # analyze_and_save(args=args, epoch=0, model_sample=model_ema, nodes_dist=nodes_dist,
+    # analyze_and_save(args=args, epoch=0, model_sample=model, nodes_dist=nodes_dist,
     #                  dataset_info=dataset_info, device=device,
-    #                  prop_dist=prop_dist, n_samples=args.n_stability_samples)
+    #                  prop_dist=prop_dist, n_samples=10, batch_size=10)
     # exit(0)
     for epoch in range(args.start_epoch, args.n_epochs):
         start_epoch = time.time()
-        print('lr: ',optim.param_groups[0]["lr"])
-        train_HyperbolicDiffusion_epoch(args=args, loader=dataloaders['train'], epoch=epoch, model=model, model_dp=model_dp,
+        train_HGDM_epoch(args=args, loader=dataloaders['train'], epoch=epoch, model=model,
                     model_ema=model_ema, ema=ema, device=device, dtype=dtype, property_norms=property_norms,
                     nodes_dist=nodes_dist, dataset_info=dataset_info,
                     gradnorm_queue=gradnorm_queue, optim=optim, prop_dist=prop_dist)
-        # lr_schedule.step(epoch)
-        # utils.save_model(optim, 'outputs/%s/optim_%d.npy' % (args.exp_name, epoch))
-        # utils.save_model(model, 'outputs/%s/generative_model_%d.npy' % (args.exp_name, epoch))
+
         print(f"Epoch took {time.time() - start_epoch:.1f} seconds.")
-        # with torch.no_grad():
-        #     t = torch.arange(0,1,0.05).unsqueeze(-1).to(device, dtype)
-        #     c = model.dynamics.egnn.curvature_net(t)
-        #     print(c)
         if epoch % args.visualize_epoch == 0 and epoch != 0: #
+            # analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,
+            #                  dataset_info=dataset_info, device=device,
+            #                  prop_dist=prop_dist, n_samples=args.n_stability_samples)
             analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,
                              dataset_info=dataset_info, device=device,
                              prop_dist=prop_dist, n_samples=args.n_stability_samples)
         if epoch % args.test_epochs == 0:
-            wandb.log(model.log_info(), commit=True)
-            nll_val = test_HyperbolicDiffusion(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema_dp,
+            nll_val = test_HGDM(args=args, loader=dataloaders['valid'], epoch=epoch, eval_model=model_ema_dp,
                            partition='Val', device=device, dtype=dtype, nodes_dist=nodes_dist,
                            property_norms=property_norms)
 

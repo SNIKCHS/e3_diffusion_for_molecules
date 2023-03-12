@@ -1,5 +1,7 @@
 import torch
 import torch.nn
+from torch import nn
+
 from . import lorentz_math as math
 import geoopt
 from geoopt.manifolds.base import Manifold, ScalingInfo
@@ -20,7 +22,7 @@ _lorentz_ball_doc = r"""
 """
 
 
-class Lorentz:
+class Lorentz(nn.Module):
     __doc__ = r"""{}
     """.format(
         _lorentz_ball_doc
@@ -41,8 +43,8 @@ class Lorentz:
         #     self.k = k.to(torch.float64)
         # else:
         #     self.k = torch.nn.Parameter(k.to(torch.float64), requires_grad=learnable)
-        # self.k = torch.nn.Parameter(k.to(torch.float64), requires_grad=learnable)
-        self.k = k.to(torch.float64)
+        self.k = torch.nn.Parameter(k.to(torch.float64), requires_grad=learnable)
+        # self.k = k.to(torch.float64)
 
 
 

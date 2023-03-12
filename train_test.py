@@ -49,8 +49,8 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
         optim.zero_grad()
 
         # transform batch through flow
-        rec_loss, KL_loss,edge_loss = model_dp(x, h, node_mask, edge_mask)
-        loss = rec_loss + args.ode_regularization*KL_loss+args.ode_regularization*edge_loss
+        rec_loss,pos_loss, KL_loss = model_dp(x, h, node_mask, edge_mask)
+        loss = rec_loss+ pos_loss + args.ode_regularization*KL_loss
         if torch.isnan(loss):
             raise AssertionError
 
@@ -74,12 +74,13 @@ def train_AE_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device,
 
 
         print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
-              f"Loss {loss.item():.4f}, rec_loss: {rec_loss.item():.4f},edge_loss: {edge_loss.item():.4f}, KL_loss: {KL_loss.item():.4f}, "
+              f"Loss {loss.item():.4f}, rec_loss: {rec_loss.item():.4f},pos_loss: {pos_loss.item():.4f}, KL_loss: {KL_loss.item():.4f}, "
               f"GradNorm: {grad_norm:.1f},time:{time.time() - start:.4f}")
         nll_epoch.append(loss.item())
-        wandb.log({"Batch NLL": loss.item(), 'rec_loss': rec_loss.item(), 'KL_loss': KL_loss.item(),'edge_loss': edge_loss.item()},
+        wandb.log({"Batch NLL": loss.item(), 'rec_loss': rec_loss.item(), 'KL_loss': KL_loss.item(),'pos_loss': pos_loss.item()},
                   commit=True)
-    model.show_curvatures()
+    if args.model != 'GCN':
+        model.show_curvatures()
     wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
 
 
@@ -190,7 +191,106 @@ def train_HyperbolicDiffusion_epoch(args, loader, epoch, model, model_dp, model_
                                 wandb=wandb, mode='conditional')
     wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
 
+def train_HGDM_epoch(args, loader, epoch, model, model_ema, ema, device, dtype, property_norms,
+                                    optim, nodes_dist, gradnorm_queue, dataset_info, prop_dist):
+    # torch.autograd.set_detect_anomaly(True)
+    model.train()
+    nll_epoch = []
+    n_iterations = len(loader)
 
+    for i, data in enumerate(loader):
+        start = time.time()
+        x = data['positions'].to(device, dtype)
+        node_mask = data['atom_mask'].to(device, dtype).unsqueeze(2)
+        edge_mask = data['edge_mask'].to(device, dtype)
+        one_hot = data['one_hot'].to(device, dtype)
+        charges = (data['charges'] if args.include_charges else torch.zeros(0)).to(device, dtype)
+        categories = (torch.argmax(one_hot.int(), dim=2) + 1) * node_mask.squeeze()  # (b,n_nodes) o为padding，1~5
+        h = (categories.long(), charges)
+
+        x = remove_mean_with_mask(x, node_mask)
+
+        if args.augment_noise > 0:
+            # Add noise eps ~ N(0, augment_noise) around points.
+            eps = sample_center_gravity_zero_gaussian_with_mask(x.size(), x.device, node_mask)
+            x = x + eps * args.augment_noise
+            x = remove_mean_with_mask(x, node_mask)
+        if args.data_augmentation:
+            x = utils.random_rotation(x).detach()
+
+        check_mask_correct([x, one_hot, charges], node_mask)
+        assert_mean_zero_with_mask(x, node_mask)
+
+        if len(args.conditioning) > 0:
+            context = qm9utils.prepare_context(args.conditioning, data, property_norms).to(device, dtype)
+            assert_correctly_masked(context, node_mask)
+        else:
+            context = None
+
+        optim.zero_grad()
+
+        # transform batch through flow
+        nll = model(x, h, node_mask, edge_mask, context)
+
+        # standard nll from forward KL
+        loss = nll
+        if torch.isnan(loss):
+            for m in model.dynamics.egnn.manifolds:
+                print(m.k.item())
+            utils.save_model(model, 'outputs/%s/error_model.npy' % args.exp_name)
+            raise AssertionError
+        loss.backward()
+
+        if args.clip_grad:
+            grad_norm = utils.gradient_clipping(model, gradnorm_queue)
+        else:
+            grad_norm = 0.
+
+        optim.step()
+
+        # with torch.no_grad():
+        #     t = torch.arange(0,1,0.1).unsqueeze(-1).to(device, dtype)
+        #     c = model.dynamics.egnn.curvature_net(t)
+        #     print(c)
+        # Update EMA if enabled.
+        if args.ema_decay > 0:
+            ema.update_model_average(model_ema, model)
+
+        if i % args.n_report_steps == 0:
+            print(f"\rEpoch: {epoch}, iter: {i}/{n_iterations}, "
+                  f"Loss {loss.item():.4f}, "
+                  f"GradNorm: {grad_norm:.1f} "
+                  f"time:{time.time() - start:.4f}")
+
+        nll_epoch.append(nll.item())
+        wandb.log({'loss': loss.item()}, commit=True)
+        if args.break_train_epoch:
+            break
+
+    # sample_different_sizes_and_save(model_dp, nodes_dist, args, device, dataset_info,
+    #                                 prop_dist, epoch=epoch)
+    # vis.visualize(f"outputs/{args.exp_name}/epoch_{epoch}_", dataset_info=dataset_info, wandb=wandb)
+    if args.hyp:
+        for m in model.noise_net.manifolds:
+            print(m.k.item())
+
+    if epoch % args.sample_epoch == 0 and epoch!=0:
+        start = time.time()
+        if len(args.conditioning) > 0:
+            save_and_sample_conditional(args, device, model_ema, prop_dist, dataset_info, epoch=epoch)
+        save_and_sample_chain(model_ema, args, device, dataset_info, prop_dist, epoch=epoch)
+
+        sample_different_sizes_and_save(model_ema, nodes_dist, args, device, dataset_info,
+                                        prop_dist, epoch=epoch)
+
+        print(f'Sampling took {time.time() - start:.2f} seconds')
+
+        vis.visualize(f"outputs/{args.exp_name}/epoch_{epoch}_", dataset_info=dataset_info, wandb=wandb)
+        vis.visualize_chain(f"outputs/{args.exp_name}/epoch_{epoch}_/chain/", dataset_info, wandb=wandb)
+        if len(args.conditioning) > 0:
+            vis.visualize_chain("outputs/%s/epoch_%d_/conditional/" % (args.exp_name, epoch), dataset_info,
+                                wandb=wandb, mode='conditional')
+    wandb.log({"Train Epoch NLL": np.mean(nll_epoch)}, commit=False)
 def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
                 nodes_dist, gradnorm_queue, dataset_info, prop_dist):
     model_dp.train()
@@ -309,16 +409,16 @@ def test_AE(args, loader, epoch, eval_model, device, dtype, property_norms, part
                 context = None
 
             # transform batch through flow
-            rec_loss, KL_loss,edge_loss = eval_model(x, h, node_mask, edge_mask)
+            rec_loss,pos_loss, KL_loss = eval_model(x, h, node_mask, edge_mask)
             # standard nll from forward KL
-            nll = rec_loss + args.ode_regularization*KL_loss +args.ode_regularization*edge_loss
+            nll = rec_loss+pos_loss + args.ode_regularization*KL_loss
             # standard nll from forward KL
 
             nll_epoch += nll * batch_size
             n_samples += batch_size
             if i % args.n_report_steps == 0:
                 print(f"\r {partition} NLL \t epoch: {epoch}, iter: {i}/{n_iterations}, "
-                      f"NLL: {nll.item():.6f} \t node_loss: {rec_loss.item():.6f} \tedge_loss: {edge_loss.item():.6f} \t KL_loss: {KL_loss.item():.6f}")
+                      f"NLL: {nll.item():.6f} \t node_loss: {rec_loss.item():.6f} \tpos_loss: {pos_loss.item():.6f} \t KL_loss: {KL_loss.item():.6f}")
 
     return nll_epoch / n_samples
 
@@ -372,7 +472,53 @@ def test_HyperbolicDiffusion(args, loader, epoch, eval_model, device, dtype, pro
 
     return nll_epoch / n_samples
 
+def test_HGDM(args, loader, epoch, eval_model, device, dtype, property_norms, nodes_dist,
+                             partition='Test'):
+    eval_model.eval()
+    with torch.no_grad():
+        nll_epoch = 0
+        n_samples = 0
 
+        n_iterations = len(loader)
+
+        for i, data in enumerate(loader):
+            x = data['positions'].to(device, dtype)
+            batch_size = x.size(0)
+            node_mask = data['atom_mask'].to(device, dtype).unsqueeze(2)
+            edge_mask = data['edge_mask'].to(device, dtype)
+            one_hot = data['one_hot'].to(device, dtype)
+            charges = (data['charges'] if args.include_charges else torch.zeros(0)).to(device, dtype)
+            categories = (torch.argmax(one_hot.int(), dim=2) + 1) * node_mask.squeeze()  # (b,n_nodes) o为padding，1~5
+            h = (categories.long(), charges)
+
+            if args.augment_noise > 0:
+                # Add noise eps ~ N(0, augment_noise) around points.
+                eps = sample_center_gravity_zero_gaussian_with_mask(x.size(),
+                                                                    x.device,
+                                                                    node_mask)
+                x = x + eps * args.augment_noise
+
+            x = remove_mean_with_mask(x, node_mask)
+            check_mask_correct([x, one_hot, charges], node_mask)
+            assert_mean_zero_with_mask(x, node_mask)
+
+            if len(args.conditioning) > 0:
+                context = qm9utils.prepare_context(args.conditioning, data, property_norms).to(device, dtype)
+                assert_correctly_masked(context, node_mask)
+            else:
+                context = None
+
+            # transform batch through flow
+            nll = eval_model(x, h,node_mask, edge_mask, context)
+            # standard nll from forward KL
+
+            nll_epoch += nll.item() * batch_size
+            n_samples += batch_size
+            if i % args.n_report_steps == 0:
+                print(f"\r {partition} NLL \t epoch: {epoch}, iter: {i}/{n_iterations}, "
+                      f"NLL: {nll_epoch / n_samples:.4f}")
+
+    return nll_epoch / n_samples
 def test(args, loader, epoch, eval_model, device, dtype, property_norms, nodes_dist, partition='Test'):
     eval_model.eval()
     with torch.no_grad():

@@ -20,7 +20,7 @@ def get_dim_act(args,num_layers,enc = True):
     if not args.act:
         act = lambda x: x
     else:
-        act = getattr(F, args.act)
+        act = getattr(torch.nn, args.act)
     acts = [act] * num_layers
 
     # dims = [args.dim] * (args.num_layers+1)
@@ -65,7 +65,7 @@ class GraphConvolution(Module):
         self.in_features = in_features
         self.out_features = out_features
         self.h_gauss = nn.Parameter(torch.Tensor(1), requires_grad=True)
-        self.normalization_factor = 100
+        self.normalization_factor = 1
         self.aggregation_method = 'sum'
         self.edge_mlp = nn.Sequential(
             nn.Linear(2*in_features + 1, in_features),
@@ -104,14 +104,14 @@ class GraphConvolution(Module):
                 self.in_features, self.out_features
         )
 class GCLayer(nn.Module):
-    def __init__(self, in_features, out_features,  dropout, act,edge_dim=2):
+    def __init__(self, in_features, out_features,  dropout, act,edge_dim=0):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.linear = nn.Linear(in_features, out_features)
         self.node_mlp = nn.Sequential(
             nn.Linear(2 * out_features, out_features),
-            act,
+            act(),
             nn.Linear(out_features, out_features)
         )
         self.normalization_factor = 1
@@ -119,26 +119,26 @@ class GCLayer(nn.Module):
         self.att = DenseAtt(out_features,dropout=dropout, edge_dim=edge_dim)
         self.edge_mlp = nn.Sequential(
             nn.Linear(2*out_features + edge_dim, out_features),
-            act,
+            act(),
             nn.Linear(out_features, out_features),
-            act
+            act()
         )
 
 
     def forward(self, input):
-        h, edge_attr, edges, node_mask, edge_mask = input
+        h, edges, node_mask, edge_mask = input
         h = self.linear(h)
-        h = self.Agg(h, edge_attr, edges, node_mask, edge_mask)
+        h = self.Agg(h,  edges, node_mask, edge_mask)
         h = h * node_mask
-        output = (h, edge_attr, edges, node_mask, edge_mask)
+        output = (h,  edges, node_mask, edge_mask)
         return output
 
-    def Agg(self, x, edge_attr, edges, node_mask, edge_mask):
+    def Agg(self, x,  edges, node_mask, edge_mask):
 
         row, col = edges  # 0,0,0...0,1 0,1,2..,0
 
-        att = self.att(x[row], x[col], edge_attr, edge_mask)  # (b*n_node*n_node,dim)
-        agg = self.edge_mlp(torch.concat([x[row], x[col], edge_attr],dim=-1)) * att
+        att = self.att(x[row], x[col], None, edge_mask)  # (b*n_node*n_node,dim)
+        agg = self.edge_mlp(torch.concat([x[row], x[col]],dim=-1)) * att
 
         agg = unsorted_segment_sum(agg, row, num_segments=x.size(0),  # num_segments=b*n_nodes
                                    normalization_factor=self.normalization_factor,

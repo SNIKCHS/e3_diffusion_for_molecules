@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 import math
 
+import numpy as np
 import torch
 from rdkit import Chem
 from rdkit.Chem import rdmolops
@@ -85,7 +86,6 @@ def graph_to_smile(onehot,adj):
     for atom_number in atoms:
         if atom_number == 0:
             continue
-
         atom = Chem.Atom(atom_dict[(atom_number-1).item()])  # 原子索引 atom_number
         molecular_index = molecule.AddAtom(atom)
         atom_index.append(molecular_index)
@@ -104,3 +104,10 @@ def graph_to_smile(onehot,adj):
 
     return Chem.MolToSmiles(molecule)
 
+if __name__ == "__main__":
+    mw = Chem.RWMol()
+
+    mw.AddAtom(Chem.Atom(6))
+    mw.AddAtom(Chem.Atom(1))
+    mw.AddBond(0, 1, Chem.BondType.DOUBLE)
+    print(Chem.SanitizeMol(mw))

@@ -1,7 +1,7 @@
 # Rdkit import should be first, do not move it
 import copy
 import random
-
+from timm import scheduler
 import utils.utils as utils
 import argparse
 import wandb
@@ -22,25 +22,25 @@ import numpy as np
 
 
 parser = argparse.ArgumentParser(description='AE')
-parser.add_argument('--exp_name', type=str, default='3_3_6_hgcn_wrap_b128_newdist')
+parser.add_argument('--exp_name', type=str, default='3_3_10_hgcn_wrap_b128_px_c1')
 parser.add_argument('--seed', type=int, default=1)
 parser.add_argument('--n_epochs', type=int, default=200)
 parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--dropout', type=float, default=0.0)
-parser.add_argument('--dim', type=int, default=6)
+parser.add_argument('--dim', type=int, default=10)
 parser.add_argument('--enc_layers', type=int, default=3)
 parser.add_argument('--dec_layers', type=int, default=3)
 parser.add_argument('--ode_regularization', type=float, default=1e-4)
 parser.add_argument('--bias', type=int, default=1)
 parser.add_argument('--max_z', type=int, default=6)  # pad+5 types
-parser.add_argument('--device', type=str, default='cuda')
+parser.add_argument('--device', type=str, default='cuda:6')
 parser.add_argument('--model', type=str, default='HGCN',
                     help='MLP,HNN,GCN,HGCN')
-parser.add_argument('--manifold', type=str, default='Lorentz',
+parser.add_argument('--manifold', type=str, default='PoincareBall',
                     help='Euclidean, Lorentz, PoincareBall')
 parser.add_argument('--c', type=float, default=None)
-parser.add_argument('--act', type=str, default='silu',
+parser.add_argument('--act', type=str, default='SiLU',
                     help='relu,silu,leaky_relu')
 parser.add_argument('--lr_scheduler', type=eval, default=False,
                     help='True | False')
@@ -113,26 +113,8 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device(args.device)
 dtype = torch.float32
 
-if args.resume is not None:
-
-    start_epoch = args.start_epoch
-    resume = args.resume
-    wandb_usr = args.wandb_usr
-    # exp_name = args.exp_name + '_resume'
-    with open('outputs/'+args.exp_name+'/args.pickle', 'rb') as f:  # outputs/%s/args_%d.pickle
-        args = pickle.load(f)
-
-    args.resume = resume
-    args.break_train_epoch = False
-    # args.exp_name = exp_name
-    args.start_epoch = start_epoch
-    args.wandb_usr = wandb_usr
-
-    print(args)
-
 utils.create_folders(args)
 # print(args)
-
 
 # Wandb config
 if args.no_wandb:
@@ -164,10 +146,12 @@ args.context_node_nf = context_node_nf
 
 # Create EGNN flow
 model = HyperbolicAE(args)  # model=EnVariationalDiffusion 包含EGNN_dynamics_QM9
-
+tot_params = sum([np.prod(p.size()) for p in model.parameters()])
+print(f"Total number of parameters: {tot_params}")
 model = model.to(device)
 
 optim = get_optim(args, model)
+# lr_schedule = scheduler.CosineLRScheduler(optim,t_initial=args.n_epochs,lr_min=args.lr,warmup_t=2,warmup_lr_init=1e-5)
 if args.lr_scheduler:
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optim,
@@ -192,7 +176,8 @@ def main():
         optim_state_dict = torch.load('outputs/'+args.exp_name+'/optim.npy')
         model.load_state_dict(flow_state_dict)
         optim.load_state_dict(optim_state_dict)
-
+    # flow_state_dict = torch.load('outputs/' + args.exp_name + '/AE_ema.npy')
+    # model.load_state_dict(flow_state_dict,False)
     # Initialize dataparallel if enabled and possible.
     if args.dp and torch.cuda.device_count() > 1:
         print(f'Training using {torch.cuda.device_count()} GPUs')
@@ -223,6 +208,7 @@ def main():
         train_AE_epoch(args=args, loader=dataloaders['train'], epoch=epoch, model=model, model_dp=model_dp,
                     model_ema=model_ema, ema=ema, device=device, dtype=dtype, property_norms=property_norms,
                     gradnorm_queue=gradnorm_queue, optim=optim,lr_scheduler=lr_scheduler)
+        # lr_schedule.step(epoch)
         print(f"Epoch took {time.time() - start_epoch:.1f} seconds.")
 
         if epoch % args.test_epochs == 0:

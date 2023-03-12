@@ -140,7 +140,6 @@ def sample(args, device, generative_model, dataset_info,
 
         assert_correctly_masked(x, node_mask)
         assert_mean_zero_with_mask(x, node_mask)
-
         one_hot = h['categorical']
         charges = h['integer']
 

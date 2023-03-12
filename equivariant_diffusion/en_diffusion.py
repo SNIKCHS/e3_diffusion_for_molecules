@@ -898,6 +898,8 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
         # self.atom_charge_dict = {'H': 1, 'C': 6, 'N': 7, 'O': 8, 'F': 9}
         self.atom_decoder = torch.tensor([1, 6, 7, 8, 9], device=self.device)
 
+
+
     def normalize(self, x, h=None, node_mask=None):
         delta_log_px = None
         if x is not None:
@@ -1206,7 +1208,7 @@ class HyperbolicEnVariationalDiffusion(EnVariationalDiffusion):
 
         return x, h
 
-    @torch.no_grad()  # 不加的话会在EGNN的循环block的forward时保存所有信息，而采样会循环1000次造成内存爆炸
+    @torch.no_grad()
     def sample(self, n_samples, n_nodes, node_mask, edge_mask, context, fix_noise=False):
         """
         Draw samples from the generative model.

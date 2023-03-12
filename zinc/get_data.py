@@ -16,11 +16,7 @@ dataset = "zinc"
 all_values = []
 
 def preprocess(raw_data, dataset, all_values):
-    # mean and std
-    mean = np.mean(all_values, axis=0).tolist()
-    std = np.std(all_values, axis=0).tolist()
-    mean = np.array(mean)
-    std = np.array(std)
+
 
     print('parsing smiles as graphs...')
     processed_data = {'train': [], 'valid': [], 'test': []}

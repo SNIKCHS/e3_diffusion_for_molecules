@@ -2,6 +2,8 @@ import torch
 from torch.distributions.categorical import Categorical
 
 import numpy as np
+
+from HGDM.Diffusion import HyperbolicDiffusion
 from egnn.models import EGNN_dynamics_QM9, EGNN_Lorentz_dynamics_QM9
 
 from equivariant_diffusion.en_diffusion import EnVariationalDiffusion, HyperbolicEnVariationalDiffusion
@@ -24,12 +26,6 @@ def get_model(args, device, dataset_info, dataloader_train, encoder=None, decode
     else:
         print('Warning: dynamics model is _not_ conditioned on time.')
         dynamics_in_node_nf = in_node_nf
-
-    if encoder is not None and hasattr(encoder,'manifolds') :
-        # c = encoder.curvatures[-1]
-        manifold = encoder.manifolds[-1]
-    else:
-        manifold = None
 
     net_dynamics = EGNN_Lorentz_dynamics_QM9(
         in_node_nf=dynamics_in_node_nf, context_node_nf=args.context_node_nf,
@@ -74,6 +70,15 @@ def get_model(args, device, dataset_info, dataloader_train, encoder=None, decode
         return hgdm, nodes_dist, prop_dist
     else:
         raise ValueError(args.probabilistic_model)
+    # hgdm = HyperbolicDiffusion(
+    #     args,
+    #     encoder,
+    #     decoder,
+    #     device,
+    #     num_classes=len(dataset_info['atom_decoder'])
+    # )
+    # return hgdm, nodes_dist, prop_dist
+
 
 
 def get_optim(args, generative_model):

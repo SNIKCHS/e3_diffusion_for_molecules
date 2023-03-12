@@ -161,7 +161,113 @@ class HGCLayer(nn.Module):
             h = self.ln(h)
         h = self.manifold_in.expmap0(h)
         return h
-
+# class HGCLayer(nn.Module):
+#     def __init__(self, in_features, out_features, manifold_in, manifold_out, dropout, act, edge_dim=1):
+#         super().__init__()
+#         self.in_features = in_features
+#         self.out_features = out_features
+#         self.manifold_in = manifold_in
+#         self.manifold_out = manifold_out
+#         self.bias = nn.Parameter(torch.Tensor(1, out_features))
+#         self.linear = nn.Linear(in_features, out_features, bias=False)
+#         # self.edge_mlp = nn.Sequential(
+#         #     nn.Linear(2 * out_features, out_features),
+#         #     nn.SiLU(),
+#         #     nn.Linear(out_features, out_features))
+#         self.node_mlp = nn.Sequential(
+#             nn.Linear(2 * out_features, out_features),
+#             nn.SiLU(),
+#             nn.Linear(out_features, out_features))
+#         self.dropout = nn.Dropout(dropout)
+#         self.normalization_factor = 1
+#         self.aggregation_method = 'sum'
+#         self.att = DenseAtt(out_features, dropout=dropout, edge_dim=edge_dim)
+#         self.act = act
+#         if self.manifold_in.name == 'Lorentz':
+#             self.ln = nn.LayerNorm(out_features - 1)
+#         else:
+#             self.ln = nn.LayerNorm(out_features)
+#         self.reset_parameters()
+#
+#     def proj_tan0(self, u):
+#         if self.manifold_in.name == 'Lorentz':
+#             narrowed = u.narrow(-1, 0, 1)
+#             vals = torch.zeros_like(u)
+#             vals[:, 0:1] = narrowed
+#             return u - vals
+#         else:
+#             return u
+#
+#     def reset_parameters(self):
+#         # init.xavier_uniform_(self.linear.weight, gain=0.01)
+#         init.constant_(self.bias, 0)
+#
+#     def forward(self, input):
+#         h, edges, node_mask, edge_mask = input
+#         h = self.HypLinear(h)
+#         # print('HypLinear:', torch.max(h.view(-1)), torch.min(h.view(-1)))
+#         h = self.HypAgg(h, edges, node_mask, edge_mask)
+#         # print('HypAgg:', torch.max(h.view(-1)), torch.min(h.view(-1)))
+#         h = self.HNorm(h)
+#         # print('HNorm:', torch.max(h.view(-1)), torch.min(h.view(-1)))
+#         h = self.HypAct(h)
+#         # print('HypAct:', torch.max(h.view(-1)), torch.min(h.view(-1)))
+#         # if torch.any(torch.isnan(h)):
+#         #     print('HypAct nan')
+#         output = (h, edges, node_mask, edge_mask)
+#         return output
+#
+#     def HypLinear(self, x):
+#         x = self.manifold_in.logmap0(x)
+#         x = self.linear(x)
+#         x = self.proj_tan0(x)
+#         x = self.manifold_in.expmap0(x)
+#         bias = self.proj_tan0(self.bias.view(1, -1))
+#         bias = self.manifold_in.transp0(x, bias)
+#         res = self.manifold_in.expmap(x, bias)
+#         return res
+#
+#     def HypAgg(self, x, edges, node_mask, edge_mask):
+#         x_tangent = self.manifold_in.logmap0(x)  # (b*n_node,dim)
+#
+#         row, col = edges  # 0,0,0...0,1 0,1,2..,0
+#         x_tangent_row = x_tangent[row]
+#         x_tangent_col = x_tangent[col]
+#
+#         geodesic = self.manifold_in.dist(x[row], x[col], keepdim=True)  # (b*n_node*n_node,dim)
+#         edge_attr = geodesic
+#         att = self.att(x_tangent_row, x_tangent_col, edge_attr, edge_mask)  # (b*n_node*n_node,dim)
+#         msg = self.manifold_in.logmap(x[row], x[col])  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
+#         msg = self.manifold_in.transp0back(x[row], msg)
+#         # msg = self.edge_mlp(torch.cat([x_tangent_row, x_tangent_col], dim=-1))  # (b*n_node*n_node,dim)  x_col落在x_row的切空间
+#         agg = msg * att
+#         agg = unsorted_segment_sum(agg, row, num_segments=x_tangent.size(0),  # num_segments=b*n_nodes
+#                                    normalization_factor=self.normalization_factor,
+#                                    aggregation_method=self.aggregation_method)  # sum掉第二个n_nodes (b*n_nodes*n_nodes,dim)->(b*n_nodes,dim)
+#
+#         agg = self.node_mlp(torch.cat([x_tangent, agg], dim=-1))
+#         agg = self.proj_tan0(agg)
+#         agg = self.manifold_in.transp0(x, agg)
+#         # out = out / out.norm()
+#         output = self.manifold_in.expmap(x,agg)
+#         return output
+#
+#     def HypAct(self, x):
+#         x = self.act(self.manifold_in.logmap0(x))
+#         x = self.proj_tan0(x)
+#         out = self.manifold_out.expmap0(x)
+#         return out
+#
+#     def HNorm(self, x):
+#         x = self.manifold_in.logmap0(x)
+#         if self.manifold_in.name == 'Lorentz':
+#             x[..., 1:] = self.ln(x[..., 1:].clone())
+#             # x = x / x.norm()
+#             x = self.proj_tan0(x)
+#         else:
+#             x = self.ln(x)
+#         x = self.manifold_in.expmap0(x)
+#         return x
 # class HyperbolicGraphConvolution(nn.Module):
 #     """
 #     Hyperbolic graph convolution layer.
