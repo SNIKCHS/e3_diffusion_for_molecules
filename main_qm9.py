@@ -1,4 +1,8 @@
 # Rdkit import should be first, do not move it
+import random
+
+import numpy as np
+
 try:
     from rdkit import Chem  #检测生成的分子性质有用
 except ModuleNotFoundError:
@@ -21,7 +25,7 @@ from qm9.utils import prepare_context, compute_mean_mad
 from train_test import train_epoch, test, analyze_and_save
 
 parser = argparse.ArgumentParser(description='E3Diffusion')
-parser.add_argument('--exp_name', type=str, default='debug_10')
+parser.add_argument('--exp_name', type=str, default='hgcn_128_act')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
@@ -29,28 +33,27 @@ parser.add_argument('--probabilistic_model', type=str, default='diffusion',
                     help='diffusion')
 
 # Training complexity is O(1) (unaffected), but sampling complexity is O(steps).
-parser.add_argument('--diffusion_steps', type=int, default=500)
+parser.add_argument('--diffusion_steps', type=int, default=1000)
 parser.add_argument('--diffusion_noise_schedule', type=str, default='polynomial_2',
                     help='learned, cosine')
-parser.add_argument('--diffusion_noise_precision', type=float, default=1e-5,
-                    )
+parser.add_argument('--diffusion_noise_precision', type=float, default=1e-5)
 parser.add_argument('--diffusion_loss_type', type=str, default='l2',
                     help='vlb, l2')
 
-parser.add_argument('--n_epochs', type=int, default=200)
-parser.add_argument('--batch_size', type=int, default=128)
-parser.add_argument('--lr', type=float, default=2e-4)
+parser.add_argument('--n_epochs', type=int, default=1000)
+parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--brute_force', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--actnorm', type=eval, default=True,
                     help='True | False')
 parser.add_argument('--break_train_epoch', type=eval, default=False,
                     help='True | False')
-parser.add_argument('--dp', type=eval, default=True,
+parser.add_argument('--dp', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--condition_time', type=eval, default=True,
                     help='True | False')
-parser.add_argument('--clip_grad', type=eval, default=True,
+parser.add_argument('--clip_grad', type=eval, default=False,
                     help='True | False')
 parser.add_argument('--trace', type=str, default='hutch',
                     help='hutch | exact')
@@ -80,17 +83,19 @@ parser.add_argument('--filter_n_atoms', type=int, default=None,
 parser.add_argument('--dequantization', type=str, default='argmax_variational',
                     help='uniform | variational | argmax_variational | deterministic')
 parser.add_argument('--n_report_steps', type=int, default=1)
-parser.add_argument('--wandb_usr', type=str)
-parser.add_argument('--no_wandb', default=True,action='store_true', help='Disable wandb')
+parser.add_argument('--wandb_usr', type=str,default='elma')
+parser.add_argument('--no_wandb', default=False,action='store_true', help='Disable wandb')
+
+
 parser.add_argument('--online', type=bool, default=True, help='True = wandb online -- False = wandb offline')
-parser.add_argument('--no-cuda', action='store_true', default=False,
+parser.add_argument('--cuda',type=str, default='cuda:3',
                     help='enables CUDA training')
 parser.add_argument('--save_model', type=eval, default=True,
                     help='save model')
 parser.add_argument('--generate_epochs', type=int, default=1,
                     help='save model')
 parser.add_argument('--num_workers', type=int, default=0, help='Number of worker for the dataloader')
-parser.add_argument('--test_epochs', type=int, default=10)
+parser.add_argument('--test_epochs', type=int, default=20)
 parser.add_argument('--data_augmentation', type=eval, default=False, help='use attention in the EGNN')
 parser.add_argument("--conditioning", nargs='+', default=[],
                     help='arguments : homo | lumo | alpha | gap | mu | Cv' )
@@ -104,7 +109,7 @@ parser.add_argument('--ema_decay', type=float, default=0.999,
 parser.add_argument('--augment_noise', type=float, default=0)
 parser.add_argument('--n_stability_samples', type=int, default=500,
                     help='Number of samples to compute the stability')
-parser.add_argument('--normalize_factors', type=eval, default=[1, 4, 1],
+parser.add_argument('--normalize_factors', type=eval, default=[1, 4, 10],
                     help='normalize factors for [x, categorical, integer]')
 parser.add_argument('--remove_h', action='store_true')
 parser.add_argument('--include_charges', type=eval, default=True,
@@ -121,12 +126,19 @@ dataset_info = get_dataset_info(args.dataset, args.remove_h)
 
 atom_encoder = dataset_info['atom_encoder']
 atom_decoder = dataset_info['atom_decoder']
+def setup_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
 
+# 设置随机数种子
+setup_seed(1234)
 # args, unparsed_args = parser.parse_known_args()
 args.wandb_usr = utils.get_wandb_username(args.wandb_usr)
 
-args.cuda = not args.no_cuda and torch.cuda.is_available()
-device = torch.device("cuda" if args.cuda else "cpu")
+device = torch.device(args.cuda)
 dtype = torch.float32
 
 if args.resume is not None:
@@ -254,7 +266,7 @@ def main():
             if isinstance(model, en_diffusion.EnVariationalDiffusion):
                 wandb.log(model.log_info(), commit=True)
 
-            if not args.break_train_epoch:
+            if not args.break_train_epoch and epoch != 0:
                 analyze_and_save(args=args, epoch=epoch, model_sample=model_ema, nodes_dist=nodes_dist,
                                  dataset_info=dataset_info, device=device,
                                  prop_dist=prop_dist, n_samples=args.n_stability_samples)

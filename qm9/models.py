@@ -2,6 +2,8 @@ import torch
 from torch.distributions.categorical import Categorical
 
 import numpy as np
+
+import optimizers
 from egnn.models import EGNN_dynamics_QM9
 
 from equivariant_diffusion.en_diffusion import EnVariationalDiffusion
@@ -50,7 +52,11 @@ def get_model(args, device, dataset_info, dataloader_train):
 
 
 def get_optim(args, generative_model):
-    optim = torch.optim.AdamW(
+    # optim = torch.optim.AdamW(
+    #     generative_model.parameters(),
+    #     lr=args.lr, amsgrad=True,
+    #     weight_decay=1e-12)
+    optim = optimizers.RiemannianAdam(
         generative_model.parameters(),
         lr=args.lr, amsgrad=True,
         weight_decay=1e-12)
